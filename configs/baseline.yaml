@@ -1,0 +1,25 @@
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: null
+  max_length: 128
+  batch_size: 4
+
+models:
+  teacher_names: []          # non utilisé pour ce régime
+  student:
+    n_embd: 256
+    n_layer: 4
+    n_head: 4
+    n_positions: 512
+
+training:
+  regime: student_alone       # change en "hinton_kd" pour la baseline 2
+  device: cuda
+  epochs: 3
+  lr: 0.0005
+  temperature: 2.0
+  hinton_alpha: 0.5
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints

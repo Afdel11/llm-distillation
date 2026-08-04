@@ -1,0 +1,28 @@
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: null       # null = utilise datasets/prompts.py:TOY_EXAMPLES
+                             # sinon: chemin vers un .json (liste de {"prompt":..., "response":...})
+  max_length: 128
+  batch_size: 4
+
+models:
+  teacher_names:
+    - "Qwen/Qwen2.5-1.5B-Instruct"   # large
+    - "Qwen/Qwen2.5-0.5B-Instruct"   # small
+  student:
+    n_embd: 256
+    n_layer: 4
+    n_head: 4
+    n_positions: 512
+
+training:
+  regime: arcd               # "student_alone" | "hinton_kd" | "arcd"
+  device: cuda
+  epochs: 3
+  lr: 0.0005
+  temperature: 2.0
+  hinton_alpha: 0.5            # utilisé seulement si regime=hinton_kd
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints
