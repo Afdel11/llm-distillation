@@ -1,0 +1,30 @@
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: null
+  max_length: 128
+  batch_size: 4
+
+models:
+  teacher_names:
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
+
+  student:
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4
+    intermediate_size: 2048
+
+training:
+  regime: hinton_kd
+  device: cuda
+  epochs: 3
+  lr: 0.0005
+  temperature: 2.0
+  hinton_alpha: 0.5
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints
+  teacher_cache_path: outputs/teacher_cache.pt
