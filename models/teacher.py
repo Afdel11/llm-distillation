@@ -119,3 +119,4 @@ class DebugTeacherEnsemble:
         all_logits = [self.models[name](input_ids=input_ids, attention_mask=attention_mask).logits
                       for name in self.teacher_names]
         return torch.stack(all_logits, dim=2)
+    
