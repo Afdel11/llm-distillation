@@ -5,12 +5,15 @@ data:
   batch_size: 4
 
 models:
-  teacher_names: []          # non utilisé pour ce régime
+  teacher_names:
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
   student:
-    n_embd: 256
-    n_layer: 4
-    n_head: 4
-    n_positions: 512
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4
+    intermediate_size: 2048
 
 training:
   regime: student_alone       # change en "hinton_kd" pour la baseline 2
@@ -23,3 +26,4 @@ training:
 
 output:
   checkpoint_dir: outputs/checkpoints
+  teacher_cache_path: outputs/teacher_cache.pt

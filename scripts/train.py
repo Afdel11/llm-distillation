@@ -6,13 +6,18 @@ Hub (nécessite internet, donc à lancer sur ton GPU distant, pas dans ce
 sandbox de dev). La mécanique a été validée séparément et localement dans
 tests/test_pipeline.py.
 
+Pour le régime "arcd", si outputs/teacher_cache.pt existe déjà (voir
+scripts/build_teacher_cache.py), il est utilisé automatiquement — aucun
+forward Teacher pendant l'entraînement. Sinon, les Teachers tournent en
+direct à chaque batch (plus simple pour un premier essai, plus lent en
+pratique).
+
 Usage :
     python scripts/train.py --config configs/arcd.yaml
     python scripts/train.py --config configs/baseline.yaml
 """
 
 import argparse
-import csv
 import os
 import sys
 
@@ -24,8 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datasets.tokenizer import get_tokenizer
 from datasets.prompts import TOY_EXAMPLES
-from datasets.dataloader import PromptResponseDataset, make_collate_fn
-from models.teacher import build_teachers, DEFAULT_TEACHER_NAMES
+from datasets.dataloader import PromptResponseDataset, make_collate_fn, make_cached_collate_fn
+from datasets.cache import load_teacher_cache
+from models.teacher import TeacherEnsemble
 from models.student import build_student
 from trainers.baseline import train_student_alone
 from trainers.hinton import train_hinton_kd
@@ -38,14 +44,6 @@ def load_config(path: str) -> dict:
 
 
 def load_examples(path: str = None) -> list:
-    """
-    Charge les paires (prompt, réponse). Par défaut, utilise le petit jeu
-    d'exemples de démonstration (datasets/prompts.py).
-
-    Pour un vrai entraînement, remplace ceci par le chargement d'un vrai
-    dataset (ex: un fichier JSONL local, ou `datasets.load_dataset(...)`
-    de Hugging Face si le GPU distant y a accès).
-    """
     if path is None:
         return TOY_EXAMPLES
     import json
@@ -71,19 +69,17 @@ def main(config_path: str):
     # --- Données ---
     examples = load_examples(cfg["data"].get("examples_path"))
     dataset = PromptResponseDataset(examples, tokenizer, max_length=cfg["data"]["max_length"])
-    collate_fn = make_collate_fn(pad_token_id=tokenizer.pad_token_id)
-    train_loader = DataLoader(dataset, batch_size=cfg["data"]["batch_size"],
-                               shuffle=True, collate_fn=collate_fn)
     print(f"Dataset: {len(dataset)} exemples")
 
-    # --- Student (from scratch, dimensionné sur le vocabulaire partagé) ---
+    # --- Student MiniQwen (from scratch, dimensionné sur le vocabulaire partagé) ---
     student_cfg = cfg["models"]["student"]
     student = build_student(
         vocab_size=vocab_size,
-        n_embd=student_cfg["n_embd"],
-        n_layer=student_cfg["n_layer"],
-        n_head=student_cfg["n_head"],
-        n_positions=student_cfg["n_positions"],
+        hidden_size=student_cfg["hidden_size"],
+        num_hidden_layers=student_cfg["num_hidden_layers"],
+        num_attention_heads=student_cfg["num_attention_heads"],
+        num_key_value_heads=student_cfg["num_key_value_heads"],
+        intermediate_size=student_cfg["intermediate_size"],
     )
 
     # --- Régime d'entraînement sélectionné par la config ---
@@ -91,19 +87,45 @@ def main(config_path: str):
     print(f"\nRégime: {regime}")
 
     if regime == "student_alone":
+        collate_fn = make_collate_fn(pad_token_id=tokenizer.pad_token_id)
+        train_loader = DataLoader(dataset, batch_size=cfg["data"]["batch_size"],
+                                   shuffle=True, collate_fn=collate_fn)
         train_student_alone(student, train_loader, epochs=cfg["training"]["epochs"],
                              lr=cfg["training"]["lr"], device=device)
 
     elif regime == "hinton_kd":
-        teachers = build_teachers([cfg["models"]["teacher_names"][0]])  # un seul Teacher
-        train_hinton_kd(student, teachers[0], train_loader, epochs=cfg["training"]["epochs"],
+        collate_fn = make_collate_fn(pad_token_id=tokenizer.pad_token_id)
+        train_loader = DataLoader(dataset, batch_size=cfg["data"]["batch_size"],
+                                   shuffle=True, collate_fn=collate_fn)
+        # un seul Teacher pour cette baseline : le premier nommé dans la config
+        first_name = list(cfg["models"]["teacher_names"].keys())[0]
+        ensemble = TeacherEnsemble({first_name: cfg["models"]["teacher_names"][first_name]}, device=device)
+        teacher = ensemble.models[first_name]
+        train_hinton_kd(student, teacher, train_loader, epochs=cfg["training"]["epochs"],
                          lr=cfg["training"]["lr"], temperature=cfg["training"]["temperature"],
                          alpha=cfg["training"]["hinton_alpha"], device=device)
 
     elif regime == "arcd":
-        teachers = build_teachers(cfg["models"].get("teacher_names", DEFAULT_TEACHER_NAMES))
-        train_arcd(student, teachers, train_loader, epochs=cfg["training"]["epochs"],
-                   lr=cfg["training"]["lr"], temperature=cfg["training"]["temperature"], device=device)
+        cache_path = cfg["output"].get("teacher_cache_path", "outputs/teacher_cache.pt")
+        if os.path.exists(cache_path):
+            print(f"Cache de logits Teachers trouvé: {cache_path} — aucun forward Teacher pendant l'entraînement.")
+            teacher_logits_cache = load_teacher_cache(cache_path)
+            collate_fn = make_cached_collate_fn(pad_token_id=tokenizer.pad_token_id,
+                                                 teacher_logits_cache=teacher_logits_cache)
+            train_loader = DataLoader(dataset, batch_size=cfg["data"]["batch_size"],
+                                       shuffle=True, collate_fn=collate_fn)
+            train_arcd(student, train_loader, epochs=cfg["training"]["epochs"],
+                       lr=cfg["training"]["lr"], temperature=cfg["training"]["temperature"], device=device)
+        else:
+            print(f"Pas de cache trouvé ({cache_path}) — les Teachers tourneront à chaque batch. "
+                  f"Lance scripts/build_teacher_cache.py avant un vrai entraînement pour éviter ça.")
+            collate_fn = make_collate_fn(pad_token_id=tokenizer.pad_token_id)
+            train_loader = DataLoader(dataset, batch_size=cfg["data"]["batch_size"],
+                                       shuffle=True, collate_fn=collate_fn)
+            ensemble = TeacherEnsemble(cfg["models"]["teacher_names"], device=device)
+            train_arcd(student, train_loader, epochs=cfg["training"]["epochs"],
+                       lr=cfg["training"]["lr"], temperature=cfg["training"]["temperature"],
+                       device=device, teacher_ensemble=ensemble)
 
     else:
         raise ValueError(f"regime inconnu: {regime!r}")

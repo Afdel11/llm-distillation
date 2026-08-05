@@ -1,19 +1,19 @@
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
   examples_path: null       # null = utilise datasets/prompts.py:TOY_EXAMPLES
-                             # sinon: chemin vers un .json (liste de {"prompt":..., "response":...})
   max_length: 128
   batch_size: 4
 
 models:
   teacher_names:
-    - "Qwen/Qwen2.5-1.5B-Instruct"   # large
-    - "Qwen/Qwen2.5-0.5B-Instruct"   # small
-  student:
-    n_embd: 256
-    n_layer: 4
-    n_head: 4
-    n_positions: 512
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
+  student:                    # MiniQwen : même architecture que les Teachers, réduite
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4    # < num_attention_heads -> Grouped Query Attention
+    intermediate_size: 2048
 
 training:
   regime: arcd               # "student_alone" | "hinton_kd" | "arcd"
@@ -21,8 +21,9 @@ training:
   epochs: 3
   lr: 0.0005
   temperature: 2.0
-  hinton_alpha: 0.5            # utilisé seulement si regime=hinton_kd
+  hinton_alpha: 0.5
   seed: 0
 
 output:
   checkpoint_dir: outputs/checkpoints
+  teacher_cache_path: outputs/teacher_cache.pt   # généré par scripts/build_teacher_cache.py
