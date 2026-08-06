@@ -40,11 +40,12 @@ si présent (sinon, il recalcule en direct — plus simple mais plus lent).
 - `arcd/metrics.py`    — accumulation/affichage des métriques
 - `models/teacher.py`  — `TeacherEnsemble` (Qwen2.5, production) + `DebugTeacherEnsemble` (tests, offline)
 - `models/student.py`  — MiniQwen (Qwen2Config réduit), from scratch
-- `datasets/tokenizer.py` — chargement du tokenizer partagé
-- `datasets/prompts.py`   — mise en forme prompt/réponse + masquage
-- `datasets/dataloader.py`— Dataset + collate_fn (direct ou avec cache de logits)
-- `datasets/cache.py`     — calcul et sauvegarde des logits Teachers
-- `trainers/`          — baseline.py / hinton.py / arcd.py (3 régimes comparables)
+- `data_pipeline/tokenizer.py` — chargement du tokenizer partagé
+- `data_pipeline/prompts.py`   — mise en forme prompt/réponse + masquage
+- `data_pipeline/dataloader.py`— Dataset + collate_fn (direct ou avec cache de logits)
+- `data_pipeline/cache.py`     — calcul et sauvegarde des logits Teachers
+- `trainers/hf_trainer.py` — `ARCDTrainer`/`HintonTrainer` (sous-classes de `transformers.Trainer` ;
+  `student_alone` utilise `Trainer` directement, sans sous-classe)
 - `scripts/build_teacher_cache.py` — pré-calcule les logits Teachers (à lancer avant train.py)
 - `scripts/train.py`   — point d'entrée de production (vrais Qwen2.5, GPU distant)
 - `tests/`             — un fichier de test par module de production
@@ -73,9 +74,42 @@ vrai sur ton GPU distant.
 Le premier lancement télécharge automatiquement le tokenizer et les poids
 Qwen2.5 (~1.5B + 0.5B paramètres, en bf16) — nécessite un accès internet normal.
 
-**Avant un run complet**, remplace `datasets/prompts.py:TOY_EXAMPLES` (3
-exemples de démonstration) par un vrai dataset, via `data.examples_path`
-dans la config (fichier `.json`, liste de `{"prompt":..., "response":...}`).
+**Avant un run complet**, remplace `data_pipeline/prompts.py:TOY_EXAMPLES` (3
+exemples de démonstration) par un vrai dataset :
+
+    python scripts/prepare_dataset.py \
+        --hf_dataset jpacifico/French-Alpaca-dataset-Instruct-55K \
+        --n_samples 1000 \
+        --max_length 256 \
+        --tokenizer_name Qwen/Qwen2.5-0.5B-Instruct
+
+Puis mets `data.examples_path: "outputs/data/train.json"` dans
+`configs/arcd.yaml`, `hinton.yaml` et `baseline.yaml` (les trois régimes
+doivent utiliser exactement le même dataset pour que la comparaison soit
+valide). `--max_length` doit correspondre à `data.max_length` dans ces
+mêmes configs.
+
+## Pourquoi transformers.Trainer plutôt que des boucles maison
+Les premières versions de ce projet réécrivaient la boucle d'entraînement à
+la main (trainers/baseline.py, hinton.py, arcd.py). Choix reconsidéré :
+`arcd/` (confidence, consensus, losses) est la vraie contribution de
+recherche et devait être écrit à la main — mais le scheduler de learning
+rate, l'accumulation de gradient, la reprise sur coupure (`--resume_from_checkpoint`)
+et la précision mixte n'avaient aucune raison d'être réinventés.
+`trainers/hf_trainer.py` branche `arcd/` directement dans `compute_loss()`
+de `transformers.Trainer` ; tout le reste (scheduler, sauvegarde, logging)
+vient de la librairie.
+
+## Historique : collision de nom résolue par renommage
+Ce package s'appelait `datasets/`, comme la librairie HuggingFace `datasets`
+(celle de `load_dataset()`). En mode éditable (`pip install -e .`), ça
+rendait `import datasets` systématiquement ambigu dans tout le venv —
+y compris **à l'intérieur de `transformers.Trainer` lui-même**
+(`isinstance(train_dataset, datasets.Dataset)`), ce qui aurait fait planter
+tout entraînement basé sur `Trainer`. Renommé en `data_pipeline/` pour
+lever l'ambiguïté définitivement. `scripts/prepare_dataset.py` continue de
+passer par `requests`/`pandas` plutôt que par la librairie `datasets`, par
+choix de rester sans dépendance supplémentaire — plus par nécessité.
 
 ## Point d'attention mémoire (GPU)
 Le calcul de la médiane/MAD par token porte sur des tenseurs de forme

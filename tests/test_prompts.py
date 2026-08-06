@@ -6,8 +6,8 @@ Nécessite le vrai tokenizer Qwen2.5 (internet). Skip automatique en sandbox.
 
 import pytest
 
-from datasets.prompts import TOY_EXAMPLES, IGNORE_INDEX, build_example
-from datasets.tokenizer import get_tokenizer, DEFAULT_TOKENIZER_NAME
+from data_pipeline.prompts import TOY_EXAMPLES, IGNORE_INDEX, build_example
+from data_pipeline.tokenizer import get_tokenizer, DEFAULT_TOKENIZER_NAME
 
 
 @pytest.fixture(scope="module")

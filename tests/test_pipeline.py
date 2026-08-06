@@ -2,20 +2,20 @@
 tests/test_pipeline.py
 ========================
 Test d'intégration de bout en bout, ENTIÈREMENT local (aucun accès réseau) :
-Teachers factices -> ARCD -> Student factice, sur un mini dataset factice.
+Teachers factices -> ARCDTrainer/HintonTrainer/Trainer -> Student factice.
 Couvre aussi le chemin "cache de logits" (build_teacher_cache + collate caché).
 """
 
+import tempfile
+
 import torch
-from torch.utils.data import DataLoader
+from transformers import Trainer, TrainingArguments
 
 from models.teacher import DebugTeacherEnsemble
 from models.student import build_student
-from datasets.dataloader import PromptResponseDataset, make_collate_fn, make_cached_collate_fn
-from datasets.cache import build_teacher_cache
-from trainers.baseline import train_student_alone
-from trainers.hinton import train_hinton_kd
-from trainers.arcd import train_arcd
+from data_pipeline.dataloader import PromptResponseDataset, make_collate_fn, make_cached_collate_fn
+from data_pipeline.cache import build_teacher_cache
+from trainers.hf_trainer import ARCDTrainer, HintonTrainer, drop_keys_collate
 
 VOCAB_SIZE = 128  # doit couvrir les ids générés par DebugTokenizer (mots courts)
 
@@ -38,44 +38,66 @@ def _new_student():
                           intermediate_size=64, max_position_embeddings=64)
 
 
-def test_student_alone_runs_without_error(debug_tokenizer):
+def _training_args(tmpdir):
+    return TrainingArguments(
+        output_dir=tmpdir,
+        per_device_train_batch_size=2,
+        num_train_epochs=1,
+        learning_rate=5e-4,
+        logging_steps=1,
+        save_strategy="no",
+        report_to=[],
+        remove_unused_columns=False,
+        disable_tqdm=True,
+    )
+
+
+def test_student_alone_trainer_runs_without_error(debug_tokenizer):
     torch.manual_seed(0)
     dataset = _dataset(debug_tokenizer)
-    collate_fn = make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
-
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
     student = _new_student()
-    train_student_alone(student, train_loader, epochs=1, device="cpu")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = Trainer(model=student, args=_training_args(tmpdir),
+                           train_dataset=dataset, data_collator=collate_fn)
+        trainer.train()
 
 
-def test_hinton_kd_runs_without_error(debug_tokenizer):
+def test_hinton_trainer_runs_without_error(debug_tokenizer):
     torch.manual_seed(0)
     dataset = _dataset(debug_tokenizer)
-    collate_fn = make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
 
     ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=1)
     teacher = ensemble.models[ensemble.teacher_names[0]]
     student = _new_student()
-    train_hinton_kd(student, teacher, train_loader, epochs=1, device="cpu")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = HintonTrainer(model=student, args=_training_args(tmpdir),
+                                 train_dataset=dataset, data_collator=collate_fn,
+                                 teacher=teacher, temperature=2.0, alpha=0.5)
+        trainer.train()
 
 
-def test_arcd_live_teachers_runs_without_error(debug_tokenizer):
+def test_arcd_trainer_live_teachers_runs_without_error(debug_tokenizer):
     """Mode "direct" : les Teachers tournent à chaque batch."""
     torch.manual_seed(0)
     dataset = _dataset(debug_tokenizer)
-    collate_fn = make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
 
     ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
     student = _new_student()
-    train_arcd(student, train_loader, epochs=1, device="cpu", teacher_ensemble=ensemble)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = ARCDTrainer(model=student, args=_training_args(tmpdir),
+                               train_dataset=dataset, data_collator=collate_fn,
+                               teacher_ensemble=ensemble, temperature=2.0)
+        trainer.train()
 
 
-def test_arcd_cached_teachers_runs_without_error(debug_tokenizer):
-    """Mode "cache" : les logits Teachers sont pré-calculés une fois, aucun
-    forward Teacher pendant l'entraînement — doit produire un pipeline
-    tout aussi fonctionnel que le mode direct."""
+def test_arcd_trainer_cached_teachers_runs_without_error(debug_tokenizer):
+    """Mode "cache" : logits Teachers pré-calculés, aucun forward Teacher pendant l'entraînement."""
     torch.manual_seed(0)
     dataset = _dataset(debug_tokenizer)
 
@@ -84,9 +106,13 @@ def test_arcd_cached_teachers_runs_without_error(debug_tokenizer):
                                  device="cpu", batch_size=2)
     assert len(cache) == len(dataset)
 
-    collate_fn = make_cached_collate_fn(pad_token_id=debug_tokenizer.pad_token_id,
-                                         teacher_logits_cache=cache)
-    train_loader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=collate_fn)
-
+    base_collate_fn = make_cached_collate_fn(pad_token_id=debug_tokenizer.pad_token_id,
+                                              teacher_logits_cache=cache)
+    collate_fn = drop_keys_collate(base_collate_fn, keys=("idx",))
     student = _new_student()
-    train_arcd(student, train_loader, epochs=1, device="cpu")  # pas de teacher_ensemble : lit le cache
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = ARCDTrainer(model=student, args=_training_args(tmpdir),
+                               train_dataset=dataset, data_collator=collate_fn,
+                               teacher_ensemble=None, temperature=2.0)  # pas d'ensemble : lit le cache
+        trainer.train()

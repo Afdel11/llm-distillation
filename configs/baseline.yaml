@@ -1,7 +1,7 @@
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
-  examples_path: null
-  max_length: 128
+  examples_path: "outputs/data/train.json"   # généré par scripts/prepare_dataset.py
+  max_length: 256
   batch_size: 4
 
 models:

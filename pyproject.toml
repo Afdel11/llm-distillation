@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 include = [
     "arcd*",
     "models*",
-    "datasets*",
+    "data_pipeline*",
     "trainers*",
     "scripts*"
 ]

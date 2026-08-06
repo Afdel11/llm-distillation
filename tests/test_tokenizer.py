@@ -9,7 +9,7 @@ s'exécutent pour de vrai et valident le téléchargement.
 
 import pytest
 
-from datasets.tokenizer import get_tokenizer, DEFAULT_TOKENIZER_NAME
+from data_pipeline.tokenizer import get_tokenizer, DEFAULT_TOKENIZER_NAME
 
 
 @pytest.fixture(scope="module")

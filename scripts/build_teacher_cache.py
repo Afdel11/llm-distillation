@@ -17,10 +17,10 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datasets.tokenizer import get_tokenizer
-from datasets.prompts import TOY_EXAMPLES
-from datasets.dataloader import PromptResponseDataset
-from datasets.cache import build_teacher_cache, save_teacher_cache
+from data_pipeline.tokenizer import get_tokenizer
+from data_pipeline.prompts import TOY_EXAMPLES
+from data_pipeline.dataloader import PromptResponseDataset
+from data_pipeline.cache import build_teacher_cache, save_teacher_cache
 from models.teacher import TeacherEnsemble
 
 

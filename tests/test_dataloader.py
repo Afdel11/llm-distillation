@@ -1,4 +1,4 @@
-from datasets.dataloader import PromptResponseDataset, make_collate_fn
+from data_pipeline.dataloader import PromptResponseDataset, make_collate_fn
 
 
 EXAMPLES = [
