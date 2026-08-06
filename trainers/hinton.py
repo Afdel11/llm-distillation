@@ -69,11 +69,15 @@ def train_hinton_kd(
                     attention_mask=attention_mask,
                 ).logits
 
+
+            student_logits = student(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            ).logits
+
+
             # -------------------------------------------------
             # Alignement Teacher / Student
-            # Certains modèles Qwen possèdent plus d'embeddings
-            # que de tokens réellement exposés par le tokenizer.
-            # On projette donc le Teacher sur le vocabulaire du Student.
             # -------------------------------------------------
 
             student_vocab = student_logits.size(-1)
