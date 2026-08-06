@@ -77,14 +77,14 @@ def train_hinton_kd(
 
 
             # -------------------------------------------------
-            # Alignement Teacher / Student
+            # Vérification d'alignement Teacher / Student
             # -------------------------------------------------
 
-            student_vocab = student_logits.size(-1)
-            teacher_vocab = teacher_logits.size(-1)
-
-            if teacher_vocab != student_vocab:
-                teacher_logits = teacher_logits[..., :student_vocab]
+            assert teacher_logits.size(-1) == student_logits.size(-1), (
+                f"vocab_size mismatch: teacher={teacher_logits.size(-1)} vs student={student_logits.size(-1)}. "
+                "Le Student doit être dimensionné sur model.config.vocab_size des Teachers "
+                "(voir scripts/train.py:get_model_vocab_size), pas sur len(tokenizer)."
+            )
 
             # -------------------------------------------------
             # Knowledge Distillation Loss

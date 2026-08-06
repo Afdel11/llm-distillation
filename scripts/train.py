@@ -43,6 +43,28 @@ def load_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def get_model_vocab_size(teacher_names: dict) -> int:
+    """
+    Récupère model.config.vocab_size pour chaque Teacher nommé (léger : ne
+    télécharge que config.json, pas les poids), et vérifie qu'ils coïncident
+    tous. Une divergence signalerait des Teachers qui ne partagent en fait
+    PAS le même tokenizer/vocabulaire malgré leurs noms — c'est exactement le
+    bug qu'on a déjà neutralisé une fois en choisissant deux Qwen2.5 plutôt
+    que Qwen + SmolLM2 ; cette vérification le détecterait immédiatement si
+    quelqu'un change un nom de Teacher dans la config sans y penser.
+    """
+    from transformers import AutoConfig
+
+    sizes = {name: AutoConfig.from_pretrained(hf_name).vocab_size
+             for name, hf_name in teacher_names.items()}
+    unique_sizes = set(sizes.values())
+    assert len(unique_sizes) == 1, (
+        f"Les Teachers n'ont pas le même vocab_size de sortie: {sizes}. "
+        "Vérifie qu'ils partagent bien le même tokenizer avant de continuer."
+    )
+    return unique_sizes.pop()
+
+
 def load_examples(path: str = None) -> list:
     if path is None:
         return TOY_EXAMPLES
@@ -63,18 +85,30 @@ def main(config_path: str):
 
     # --- Tokenizer partagé ---
     tokenizer = get_tokenizer(cfg["data"]["tokenizer_name"])
-    vocab_size = len(tokenizer)
-    print(f"Tokenizer: {cfg['data']['tokenizer_name']} — vocab_size={vocab_size}")
+
+    # IMPORTANT : le Student doit être dimensionné sur model.config.vocab_size
+    # (la taille RÉELLE de la matrice de sortie des Teachers), pas sur
+    # len(tokenizer). Qwen2.5 arrondit son vocabulaire de sortie à un multiple
+    # de 128 pour l'efficacité GPU (151936), alors que len(tokenizer) ne compte
+    # que les tokens réellement utilisables (151665) -> sans ça, ARCDLoss et
+    # Hinton KD crashent sur un mismatch de taille entre logits Teacher/Student.
+    # On vérifie au passage que tous les Teachers nommés partagent bien le
+    # même vocab_size de sortie (sinon ils ne partagent pas vraiment le même
+    # tokenizer, malgré leurs noms — exactement le bug qu'on a déjà chassé une
+    # fois avec Qwen/SmolLM2).
+    model_vocab_size = get_model_vocab_size(cfg["models"]["teacher_names"])
+    print(f"Tokenizer: {cfg['data']['tokenizer_name']} — "
+          f"len(tokenizer)={len(tokenizer)}, model.config.vocab_size={model_vocab_size}")
 
     # --- Données ---
     examples = load_examples(cfg["data"].get("examples_path"))
     dataset = PromptResponseDataset(examples, tokenizer, max_length=cfg["data"]["max_length"])
     print(f"Dataset: {len(dataset)} exemples")
 
-    # --- Student MiniQwen (from scratch, dimensionné sur le vocabulaire partagé) ---
+    # --- Student MiniQwen (from scratch, dimensionné sur la SORTIE réelle des Teachers) ---
     student_cfg = cfg["models"]["student"]
     student = build_student(
-        vocab_size=vocab_size,
+        vocab_size=model_vocab_size,
         hidden_size=student_cfg["hidden_size"],
         num_hidden_layers=student_cfg["num_hidden_layers"],
         num_attention_heads=student_cfg["num_attention_heads"],

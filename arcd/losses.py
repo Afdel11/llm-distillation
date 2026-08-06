@@ -69,15 +69,12 @@ class ARCDLoss(nn.Module):
         """
         mask = (labels != IGNORE_INDEX)  # (batch, seq_len)
         n_valid = mask.sum().clamp(min=1)
-       
-        # Alignement automatique du vocabulaire 
-        student_vocab = student_logits.size(-1)
-        teacher_vocab = teacher_logits.size(-1)
 
-        if teacher_vocab != student_vocab:
-            teacher_logits = teacher_logits[..., :student_vocab]
-            
-        assert teacher_logits.size(-1) == student_logits.size(-1)
+        assert teacher_logits.size(-1) == student_logits.size(-1), (
+            f"vocab_size mismatch: teacher={teacher_logits.size(-1)} vs student={student_logits.size(-1)}. "
+            "Le Student doit être dimensionné sur model.config.vocab_size des Teachers "
+            "(voir scripts/train.py:get_model_vocab_size), pas sur len(tokenizer)."
+        )
 
         p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature)
         S = student_confidence(student_logits, temperature=self.temperature)
