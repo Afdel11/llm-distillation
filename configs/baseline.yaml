@@ -1,6 +1,7 @@
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
   examples_path: "outputs/data/train.json"   # généré par scripts/prepare_dataset.py
+  val_examples_path: "outputs/data/val.json"   # idem, split de validation
   max_length: 256
   batch_size: 4
 
@@ -18,7 +19,8 @@ models:
 training:
   regime: student_alone       # change en "hinton_kd" pour la baseline 2
   device: cuda
-  epochs: 50
+  epochs: 20                # plafond haut : l'early stopping arrête avant, sur eval_loss
+  early_stopping_patience: 3  # arrêt si eval_loss ne s'améliore plus pendant 3 évaluations
   lr: 0.0005
   temperature: 2.0
   hinton_alpha: 0.5
@@ -27,3 +29,4 @@ training:
 output:
   checkpoint_dir: outputs/checkpoints
   teacher_cache_path: outputs/teacher_cache.pt
+  teacher_cache_val_path: outputs/teacher_cache_val.pt   # idem, pour l'évaluation

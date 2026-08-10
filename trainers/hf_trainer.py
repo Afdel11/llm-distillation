@@ -94,10 +94,28 @@ class HintonTrainer(Trainer):
 class ARCDTrainer(Trainer):
     """Méthode proposée : lambda(x) = C * T * (1 - S), calculé par token."""
 
-    def __init__(self, *args, teacher_ensemble=None, temperature: float = 2.0, **kwargs):
+    def __init__(self, *args, teacher_ensemble=None, temperature: float = 2.0,
+                 eval_data_collator=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.teacher_ensemble = teacher_ensemble  # None si on utilise uniquement le cache
         self.arcd_loss = ARCDLoss(temperature=temperature)
+        # transformers.Trainer ne supporte qu'un seul data_collator (train ET eval).
+        # Ici, train utilise le cache d'entraînement et eval le cache de validation
+        # (deux fichiers distincts, indices non interchangeables) -> on a besoin
+        # d'un collator différent pour l'évaluation. On surcharge get_eval_dataloader
+        # pour substituer temporairement self.data_collator plutôt que de bidouiller
+        # l'API du Trainer parent.
+        self._eval_data_collator = eval_data_collator
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        if self._eval_data_collator is None:
+            return super().get_eval_dataloader(eval_dataset)
+        original_collator = self.data_collator
+        self.data_collator = self._eval_data_collator
+        try:
+            return super().get_eval_dataloader(eval_dataset)
+        finally:
+            self.data_collator = original_collator
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.pop("labels")

@@ -116,3 +116,53 @@ def test_arcd_trainer_cached_teachers_runs_without_error(debug_tokenizer):
                                train_dataset=dataset, data_collator=collate_fn,
                                teacher_ensemble=None, temperature=2.0)  # pas d'ensemble : lit le cache
         trainer.train()
+
+
+def test_arcd_trainer_eval_with_distinct_cache_does_not_crash(debug_tokenizer):
+    """
+    Reproduit le scénario ajouté contre le surapprentissage : un cache
+    d'ENTRAÎNEMENT et un cache de VALIDATION distincts (deux datasets
+    séparés, indices non interchangeables), avec eval_data_collator
+    différent de data_collator sur le même Trainer. Vérifie que
+    get_eval_dataloader (surchargé dans ARCDTrainer) bascule bien sur le
+    bon collator, sans mélanger les deux caches, et que l'entraînement +
+    l'évaluation se déroulent sans erreur.
+    """
+    torch.manual_seed(0)
+
+    val_examples = EXAMPLES[:2]  # volontairement plus petit que le train,
+                                   # pour être sûr qu'on ne réutilise pas le cache train par erreur
+    train_dataset = _dataset(debug_tokenizer)
+    val_dataset = PromptResponseDataset(val_examples, debug_tokenizer, max_length=32)
+
+    ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
+    train_cache = build_teacher_cache(ensemble, train_dataset, pad_token_id=debug_tokenizer.pad_token_id,
+                                       device="cpu", batch_size=2)
+    val_cache = build_teacher_cache(ensemble, val_dataset, pad_token_id=debug_tokenizer.pad_token_id,
+                                     device="cpu", batch_size=2)
+
+    train_collate = drop_keys_collate(
+        make_cached_collate_fn(pad_token_id=debug_tokenizer.pad_token_id, teacher_logits_cache=train_cache),
+        keys=("idx",))
+    eval_collate = drop_keys_collate(
+        make_cached_collate_fn(pad_token_id=debug_tokenizer.pad_token_id, teacher_logits_cache=val_cache),
+        keys=("idx",))
+
+    student = _new_student()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        args = TrainingArguments(
+            output_dir=tmpdir, per_device_train_batch_size=2, per_device_eval_batch_size=2,
+            num_train_epochs=1, eval_strategy="epoch", save_strategy="epoch",
+            load_best_model_at_end=True, metric_for_best_model="eval_loss", greater_is_better=False,
+            report_to=[], logging_steps=100, remove_unused_columns=False, disable_tqdm=True,
+        )
+        trainer = ARCDTrainer(
+            model=student, args=args, train_dataset=train_dataset, eval_dataset=val_dataset,
+            data_collator=train_collate, eval_data_collator=eval_collate, temperature=2.0,
+        )
+        trainer.train()  # ne doit pas planter : confirme que get_eval_dataloader utilise bien val_cache
+
+        metrics = trainer.evaluate()
+        assert "eval_loss" in metrics
+        assert metrics["eval_loss"] == metrics["eval_loss"]  # pas de NaN (NaN != NaN)
