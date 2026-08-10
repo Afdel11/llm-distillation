@@ -18,7 +18,7 @@ models:
 training:
   regime: arcd               # "student_alone" | "hinton_kd" | "arcd"
   device: cuda
-  epochs: 3
+  epochs: 50
   lr: 0.0005
   temperature: 2.0
   hinton_alpha: 0.5

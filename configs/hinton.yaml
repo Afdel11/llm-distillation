@@ -19,7 +19,7 @@ models:
 training:
   regime: hinton_kd
   device: cuda
-  epochs: 3
+  epochs: 50
   lr: 0.0005
   temperature: 2.0
   hinton_alpha: 0.5
