@@ -78,6 +78,14 @@ def build_training_arguments(cfg: dict, regime: str) -> TrainingArguments:
         report_to=[],  # pas de W&B/TensorBoard configuré par défaut
         remove_unused_columns=False,  # nos batches ont des clés (idx, teacher_logits)
                                        # que le modèle ne consomme pas directement
+        # Le collate du régime "arcd" reconstruit un tenseur (batch, seq, teachers,
+        # vocab) potentiellement > 1 Go (voir data_pipeline/dataloader.py). Sans
+        # workers, ce travail CPU bloque le GPU entre chaque step. Avec des workers
+        # + pin_memory, le collate du batch N+1 tourne en arrière-plan pendant que
+        # le GPU calcule le batch N — recouvrement, pas d'accélération magique du
+        # collate lui-même, mais son coût cesse d'être payé en série.
+        dataloader_num_workers=cfg["training"].get("dataloader_num_workers", 4),
+        dataloader_pin_memory=True,
     )
 
 

@@ -82,7 +82,12 @@ def make_cached_collate_fn(pad_token_id: int, teacher_logits_cache: dict):
                 logits_i = torch.cat([logits_i, pad], dim=0)
             padded_logits.append(logits_i)
 
-        out["teacher_logits"] = torch.stack(padded_logits, dim=0).float()  # (batch, seq, teachers, vocab)
+        # float16, PAS float32 ici : le cast se fait après le transfert vers le GPU
+        # (voir ARCDLoss / hf_trainer.py), pour ne transférer que la moitié du volume
+        # sur PCIe. Avec vocab=151936 et 2 Teachers, ce tenseur peut dépasser 1 Go par
+        # batch en float32 — le doubler inutilement sur CPU était le principal goulet
+        # d'étranglement du régime arcd malgré le cache.
+        out["teacher_logits"] = torch.stack(padded_logits, dim=0)  # (batch, seq, teachers, vocab), float16
         return out
 
     return collate_fn

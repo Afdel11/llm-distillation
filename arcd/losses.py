@@ -76,6 +76,13 @@ class ARCDLoss(nn.Module):
             "(voir scripts/train.py:get_model_vocab_size), pas sur len(tokenizer)."
         )
 
+        # Le cache (data_pipeline/cache.py) stocke en float16 et le collate NE cast
+        # PLUS en float32 (voir data_pipeline/dataloader.py) — le transfert CPU->GPU
+        # se fait donc en float16 (moitié moins de données sur PCIe). On repasse en
+        # float32 ici, après le transfert, où le cast est quasi gratuit (bande
+        # passante mémoire GPU, pas PCIe).
+        teacher_logits = teacher_logits.float()
+
         p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature)
         S = student_confidence(student_logits, temperature=self.temperature)
 
