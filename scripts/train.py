@@ -84,8 +84,16 @@ def build_training_arguments(cfg: dict, regime: str) -> TrainingArguments:
         # + pin_memory, le collate du batch N+1 tourne en arrière-plan pendant que
         # le GPU calcule le batch N — recouvrement, pas d'accélération magique du
         # collate lui-même, mais son coût cesse d'être payé en série.
-        dataloader_num_workers=cfg["training"].get("dataloader_num_workers", 4),
-        dataloader_pin_memory=True,
+        # ATTENTION : num_workers > 0 avec le cache ARCD (un dict Python de
+        # potentiellement plusieurs dizaines de Go de tenseurs) peut provoquer un
+        # OOM : le fork des workers ne partage la mémoire que par copy-on-write,
+        # et CHAQUE accès en lecture à un objet Python touche son compteur de
+        # références, ce qui invalide ce partage page par page. Défaut à 0
+        # (sûr, pas de recouvrement CPU/GPU) ; à n'augmenter que si le cache
+        # est un jour restructuré en accès disque paresseux plutôt qu'un seul
+        # gros dict préchargé en RAM.
+        dataloader_num_workers=cfg["training"].get("dataloader_num_workers", 0),
+        dataloader_pin_memory=cfg["training"].get("dataloader_num_workers", 0) > 0,
     )
 
 
