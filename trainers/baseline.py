@@ -18,7 +18,7 @@ from arcd.metrics import MetricTracker
 def train_student_alone(
     student,
     train_loader,
-    epochs: int = 3,
+    epochs: int = 50,
     lr: float = 5e-4,
     device: str = "cpu",
 ):

@@ -22,7 +22,7 @@ def train_hinton_kd(
     student,
     teacher,
     train_loader,
-    epochs: int = 3,
+    epochs: int = 50,
     lr: float = 5e-4,
     temperature: float = 2.0,
     alpha: float = 0.5,
