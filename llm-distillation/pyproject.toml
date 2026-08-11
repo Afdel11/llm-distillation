@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-distillation"
+version = "0.1.0"
+description = "Adaptive Robust Confidence Distillation"
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+include = [
+    "arcd*",
+    "models*",
+    "data_pipeline*",
+    "trainers*",
+    "scripts*"
+]
