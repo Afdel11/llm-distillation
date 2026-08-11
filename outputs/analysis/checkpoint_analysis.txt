@@ -1,0 +1,76 @@
+
+============================================================
+BASELINE — STUDENT ALONE
+============================================================
+
+checkpoint-1125
+  epoch=5.00 | eval_loss=5.387998
+checkpoint-1575
+  epoch=5.00 | eval_loss=5.387998
+checkpoint-1800
+  epoch=5.00 | eval_loss=5.387998
+
+  ----------------------------------------------------------
+  MEILLEUR RÉSULTAT
+  ----------------------------------------------------------
+  Régime     : BASELINE — STUDENT ALONE
+  Checkpoint : checkpoint-1125
+  Epoch      : 5.00
+  Eval loss  : 5.387998
+  ----------------------------------------------------------
+
+============================================================
+HINTON — KNOWLEDGE DISTILLATION
+============================================================
+
+checkpoint-4050
+  epoch=17.00 | eval_loss=3.929991
+checkpoint-4275
+  epoch=19.00 | eval_loss=3.929471
+checkpoint-4500
+  epoch=19.00 | eval_loss=3.929471
+
+  ----------------------------------------------------------
+  MEILLEUR RÉSULTAT
+  ----------------------------------------------------------
+  Régime     : HINTON — KNOWLEDGE DISTILLATION
+  Checkpoint : checkpoint-4500
+  Epoch      : 19.00
+  Eval loss  : 3.929471
+  ----------------------------------------------------------
+
+============================================================
+ARCD — ADAPTIVE ROBUST CONSENSUS DISTILLATION
+============================================================
+
+checkpoint-1125
+  epoch=5.00 | eval_loss=0.686505
+checkpoint-1350
+  epoch=6.00 | eval_loss=0.684964
+checkpoint-1575
+  epoch=7.00 | eval_loss=0.639536
+
+  ----------------------------------------------------------
+  MEILLEUR RÉSULTAT
+  ----------------------------------------------------------
+  Régime     : ARCD — ADAPTIVE ROBUST CONSENSUS DISTILLATION
+  Checkpoint : checkpoint-1575
+  Epoch      : 7.00
+  Eval loss  : 0.639536
+  ----------------------------------------------------------
+
+============================================================
+ COMPARAISON DES TROIS MÉTHODES
+============================================================
+
+
+============================================================
+ FICHIERS GÉNÉRÉS
+============================================================
+
+CSV : /home/research/knowledge-distillation/llm-distillation/outputs/analysis/checkpoint_analysis.csv
+TXT : /home/research/knowledge-distillation/llm-distillation/outputs/analysis/checkpoint_analysis.txt
+
+Le CSV peut être utilisé pour générer les graphiques
+d'analyse du mémoire.
+

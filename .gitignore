@@ -1,4 +1,14 @@
 __pycache__/
 *.pyc
 venv/
-outputs/
+
+# Modèles et artefacts lourds
+outputs/checkpoints/
+outputs/teacher_cache.pt
+outputs/teacher_cache_val.pt
+
+# Fichiers temporaires d'entraînement
+outputs/**/optimizer.pt
+outputs/**/scheduler.pt
+outputs/**/rng_state.pth
+outputs/**/training_args.bin
