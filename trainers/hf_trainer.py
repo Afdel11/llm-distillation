@@ -52,6 +52,7 @@ class HintonTrainer(Trainer):
         self.teacher.eval()
         self.temperature = temperature
         self.alpha = alpha
+        self._eval_metrics_buffer = []
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.pop("labels")
@@ -86,9 +87,32 @@ class HintonTrainer(Trainer):
         )
 
         loss = self.alpha * l_kd + (1 - self.alpha) * l_ce
-        self.log({"hinton/L_KD": l_kd.item(), "hinton/L_CE": l_ce.item()})
+        metrics = {"L_KD": l_kd.item(), "L_CE": l_ce.item()}
+
+        if model.training:
+            # En entraînement : logging brut immédiat, pour le suivi live.
+            self.log({f"hinton/{k}": v for k, v in metrics.items()})
+        else:
+            # En évaluation : PAS de log par batch (spam inutile dans
+            # log_history) -> accumulé puis moyenné dans evaluation_loop,
+            # fusionné avec eval_loss dans la MÊME entrée.
+            self._eval_metrics_buffer.append(metrics)
 
         return (loss, student_outputs) if return_outputs else loss
+
+    def evaluation_loop(self, dataloader, description, prediction_loss_only=None,
+                         ignore_keys=None, metric_key_prefix="eval"):
+        self._eval_metrics_buffer = []
+        output = super().evaluation_loop(
+            dataloader, description, prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix,
+        )
+        if self._eval_metrics_buffer:
+            keys = self._eval_metrics_buffer[0].keys()
+            for k in keys:
+                avg = sum(d[k] for d in self._eval_metrics_buffer) / len(self._eval_metrics_buffer)
+                output.metrics[f"{metric_key_prefix}_hinton/{k}"] = avg
+        return output
 
 
 class ARCDTrainer(Trainer):
@@ -106,6 +130,7 @@ class ARCDTrainer(Trainer):
         # pour substituer temporairement self.data_collator plutôt que de bidouiller
         # l'API du Trainer parent.
         self._eval_data_collator = eval_data_collator
+        self._eval_metrics_buffer = []
 
     def get_eval_dataloader(self, eval_dataset=None):
         if self._eval_data_collator is None:
@@ -135,6 +160,28 @@ class ARCDTrainer(Trainer):
             teacher_logits = self.teacher_ensemble(inputs["input_ids"], inputs["attention_mask"])
 
         loss, metrics = self.arcd_loss(student_logits, teacher_logits, labels)
-        self.log({f"arcd/{k}": v for k, v in metrics.items()})
+
+        if model.training:
+            # En entraînement : logging brut immédiat, pour le suivi live.
+            self.log({f"arcd/{k}": v for k, v in metrics.items()})
+        else:
+            # En évaluation : accumulé, moyenné et fusionné avec eval_loss
+            # dans evaluation_loop -> pas de spam, une seule entrée propre
+            # par epoch dans log_history / trainer_state.json.
+            self._eval_metrics_buffer.append(metrics)
 
         return (loss, student_outputs) if return_outputs else loss
+
+    def evaluation_loop(self, dataloader, description, prediction_loss_only=None,
+                         ignore_keys=None, metric_key_prefix="eval"):
+        self._eval_metrics_buffer = []
+        output = super().evaluation_loop(
+            dataloader, description, prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix,
+        )
+        if self._eval_metrics_buffer:
+            keys = self._eval_metrics_buffer[0].keys()
+            for k in keys:
+                avg = sum(d[k] for d in self._eval_metrics_buffer) / len(self._eval_metrics_buffer)
+                output.metrics[f"{metric_key_prefix}_arcd/{k}"] = avg
+        return output

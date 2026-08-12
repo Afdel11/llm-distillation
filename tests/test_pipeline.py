@@ -166,3 +166,20 @@ def test_arcd_trainer_eval_with_distinct_cache_does_not_crash(debug_tokenizer):
         metrics = trainer.evaluate()
         assert "eval_loss" in metrics
         assert metrics["eval_loss"] == metrics["eval_loss"]  # pas de NaN (NaN != NaN)
+
+        # Les métriques détaillées doivent être moyennées et fusionnées DANS
+        # la même entrée que eval_loss, avec le préfixe "eval_" — sinon aucun
+        # moyen de comparer objectivement ARCD à Hinton/Baseline sur eval_L_CE.
+        for key in ("eval_arcd/loss", "eval_arcd/L_KD", "eval_arcd/L_CE",
+                    "eval_arcd/C", "eval_arcd/T", "eval_arcd/S", "eval_arcd/lambda"):
+            assert key in metrics, f"Métrique manquante après evaluation_loop: {key}"
+            assert metrics[key] == metrics[key], f"NaN détecté dans {key}"
+
+        # Ces métriques ne doivent PAS avoir pollué log_history batch par
+        # batch pendant l'éval : une seule entrée par ÉVÉNEMENT d'évaluation
+        # (train() en déclenche un en interne à la fin de l'epoch, puis
+        # l'appel explicite à evaluate() ci-dessus en déclenche un second).
+        eval_entries = [e for e in trainer.state.log_history if "eval_loss" in e]
+        assert len(eval_entries) == 2
+        for entry in eval_entries:
+            assert "arcd/loss" not in entry  # la clé SANS préfixe eval_ ne doit pas traîner ici
