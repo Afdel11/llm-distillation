@@ -18,6 +18,7 @@ import sys
 import torch
 import yaml
 from transformers import Trainer, TrainingArguments, EarlyStoppingCallback
+from transformers.trainer_utils import get_last_checkpoint
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -33,6 +34,25 @@ from trainers.hf_trainer import ARCDTrainer, HintonTrainer, drop_keys_collate
 def load_config(path: str) -> dict:
     with open(path, "r") as f:
         return yaml.safe_load(f)
+
+
+def find_resume_checkpoint(output_dir: str, force_restart: bool):
+    """
+    Détecte un checkpoint interrompu (veille, coupure, Ctrl+C...) dans
+    output_dir et le retourne pour reprise automatique. Retourne None si
+    force_restart=True (repart de zéro volontairement) ou si aucun
+    checkpoint n'existe.
+    """
+    if force_restart:
+        return None
+    if not os.path.isdir(output_dir):
+        return None
+    last_ckpt = get_last_checkpoint(output_dir)
+    if last_ckpt is not None:
+        print(f"Checkpoint existant trouvé: {last_ckpt} — reprise automatique "
+              f"(training arguments, optimizer, scheduler, RNG state, tout est restauré).")
+        print("Pour repartir de zéro à la place, relance avec --restart.")
+    return last_ckpt
 
 
 def get_model_vocab_size(teacher_names: dict) -> int:
@@ -73,8 +93,23 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
     strategy = cfg["training"].get("eval_save_strategy", "epoch") if has_eval else \
         cfg["training"].get("save_strategy", "epoch")
 
+    # IMPORTANT : pour hinton_kd et arcd, eval_loss est un MÉLANGE (alpha ou
+    # lambda(x) pondèrent KD et CE). Ce mélange dérive au fil de
+    # l'entraînement (lambda s'effondre progressivement -> eval_loss se
+    # rapproche de plus en plus de L_CE seul), ce qui peut faire diverger le
+    # classement "meilleur epoch" entre eval_loss et la vraie métrique de
+    # comparaison (L_CE seule). On sélectionne donc le meilleur checkpoint et
+    # on déclenche l'early stopping directement sur L_CE — pas sur eval_loss
+    # composite — pour que le modèle finalement conservé soit celui qui est
+    # réellement le meilleur sur la métrique comparable aux autres régimes.
+    metric_for_best_model = {
+        "student_alone": "eval_loss",          # déjà de la CE pure, pas de mélange
+        "hinton_kd": "eval_hinton/L_CE",
+        "arcd": "eval_arcd/L_CE",
+    }.get(regime, "eval_loss")
+
     return TrainingArguments(
-        output_dir=os.path.join(cfg["output"]["checkpoint_dir"], regime),
+        output_dir=os.path.join(cfg["output"]["checkpoint_dir"], regime, f"seed_{cfg['training']['seed']}"),
         per_device_train_batch_size=cfg["data"]["batch_size"],
         per_device_eval_batch_size=cfg["data"]["batch_size"],
         num_train_epochs=cfg["training"]["epochs"],
@@ -83,7 +118,7 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
         save_strategy=strategy,
         eval_strategy=strategy if has_eval else "no",
         load_best_model_at_end=has_eval,
-        metric_for_best_model="eval_loss" if has_eval else None,
+        metric_for_best_model=metric_for_best_model if has_eval else None,
         greater_is_better=False if has_eval else None,
         save_total_limit=cfg["training"].get("save_total_limit", 3),
         bf16=use_bf16,
@@ -110,8 +145,10 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
     )
 
 
-def main(config_path: str):
+def main(config_path: str, force_restart: bool = False, seed_override: int = None):
     cfg = load_config(config_path)
+    if seed_override is not None:
+        cfg["training"]["seed"] = seed_override
     torch.manual_seed(cfg["training"]["seed"])
 
     device = cfg["training"]["device"]
@@ -159,6 +196,8 @@ def main(config_path: str):
     print(f"\nRégime: {regime}")
     training_args = build_training_arguments(cfg, regime, has_eval=(val_dataset is not None))
 
+    resume_ckpt = find_resume_checkpoint(training_args.output_dir, force_restart)
+
     callbacks = []
     if val_dataset is not None:
         patience = cfg["training"].get("early_stopping_patience", 3)
@@ -172,7 +211,7 @@ def main(config_path: str):
         collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=tokenizer.pad_token_id), keys=("idx",))
         trainer = Trainer(model=student, args=training_args, train_dataset=dataset,
                            eval_dataset=val_dataset, data_collator=collate_fn, callbacks=callbacks)
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_ckpt)
 
     elif regime == "hinton_kd":
         first_name = list(cfg["models"]["teacher_names"].keys())[0]
@@ -188,7 +227,7 @@ def main(config_path: str):
             data_collator=collate_fn, callbacks=callbacks,
             teacher=teacher, temperature=cfg["training"]["temperature"], alpha=cfg["training"]["hinton_alpha"],
         )
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_ckpt)
 
     elif regime == "arcd":
         cache_path = cfg["output"].get("teacher_cache_path", "outputs/teacher_cache.pt")
@@ -230,17 +269,23 @@ def main(config_path: str):
             eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
         )
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_ckpt)
 
     else:
         raise ValueError(f"regime inconnu: {regime!r}")
 
-    trainer.save_model(os.path.join(cfg["output"]["checkpoint_dir"], f"{regime}_final"))
-    print(f"\nStudent sauvegardé: {cfg['output']['checkpoint_dir']}/{regime}_final")
+    final_dir = os.path.join(cfg["output"]["checkpoint_dir"], f"{regime}_seed{cfg['training']['seed']}_final")
+    trainer.save_model(final_dir)
+    print(f"\nStudent sauvegardé: {final_dir}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/arcd.yaml")
+    parser.add_argument("--seed", type=int, default=None,
+                         help="Surcharge training.seed de la config (utile pour un balayage multi-seeds).")
+    parser.add_argument("--restart", action="store_true",
+                         help="Ignore tout checkpoint existant et repart de zéro "
+                              "(par défaut, un checkpoint interrompu est repris automatiquement).")
     args = parser.parse_args()
-    main(args.config)
+    main(args.config, force_restart=args.restart, seed_override=args.seed)
