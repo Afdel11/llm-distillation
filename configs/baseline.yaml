@@ -3,7 +3,8 @@ data:
   examples_path: "outputs/data/train.json"   # généré par scripts/prepare_dataset.py
   val_examples_path: "outputs/data/val.json"   # idem, split de validation
   max_length: 256
-  batch_size: 4
+  batch_size: 2                # réduit de 4 -> pic mémoire du tenseur teacher_logits en cause dans un OOM déterministe
+  gradient_accumulation_steps: 2 # batch effectif = 2*2 = 4, identique à avant (dynamique d'entraînement inchangée)
 
 models:
   teacher_names:

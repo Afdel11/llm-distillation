@@ -112,6 +112,12 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
         output_dir=os.path.join(cfg["output"]["checkpoint_dir"], regime, f"seed_{cfg['training']['seed']}"),
         per_device_train_batch_size=cfg["data"]["batch_size"],
         per_device_eval_batch_size=cfg["data"]["batch_size"],
+        # Batch EFFECTIF = batch_size * gradient_accumulation_steps. Utile pour
+        # réduire le pic mémoire par step (surtout pour arcd : le tenseur
+        # teacher_logits (batch, seq, teachers, vocab) domine la mémoire) SANS
+        # changer la dynamique d'entraînement ni casser la comparabilité entre
+        # régimes/seeds déjà lancés à un batch effectif donné.
+        gradient_accumulation_steps=cfg["data"].get("gradient_accumulation_steps", 1),
         num_train_epochs=cfg["training"]["epochs"],
         learning_rate=cfg["training"]["lr"],
         logging_steps=cfg["training"].get("logging_steps", 1),
