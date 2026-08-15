@@ -113,3 +113,69 @@ class ARCDLoss(nn.Module):
             "lambda": (lam * mask).sum().item() / n_valid.item(),
         }
         return loss, metrics
+
+
+class FixedWeightConsensusLoss(nn.Module):
+    """
+    RÉGIME DE CONTRÔLE — isole l'effet de la pondération ADAPTATIVE de celui
+    d'avoir simplement plusieurs Teachers.
+
+    Réutilise exactement la même cible de consensus robuste que ARCDLoss
+    (médiane pondérée par confiance, P*) et les 2 mêmes Teachers, mais avec
+    un poids alpha CONSTANT au lieu de lambda(x) = C*T*(1-S) adaptatif.
+    Une seule variable change par rapport à ARCDLoss : adaptatif vs fixe.
+    Tout le reste (agrégation, Teachers, Student, données) est identique,
+    ce qui permet d'attribuer un éventuel écart de performance à
+    l'adaptivité elle-même, et non à la simple présence de 2 Teachers.
+
+    Usage:
+        criterion = FixedWeightConsensusLoss(temperature=2.0, alpha=0.5)
+        loss, metrics = criterion(student_logits, teacher_logits, labels)
+    """
+
+    def __init__(self, temperature: float = 2.0, alpha: float = 0.5, eps: float = EPS):
+        super().__init__()
+        self.temperature = temperature
+        self.alpha = alpha
+        self.eps = eps
+
+    def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
+        mask = (labels != IGNORE_INDEX)
+        n_valid = mask.sum().clamp(min=1)
+
+        assert teacher_logits.size(-1) == student_logits.size(-1), (
+            f"vocab_size mismatch: teacher={teacher_logits.size(-1)} vs student={student_logits.size(-1)}. "
+            "Le Student doit être dimensionné sur model.config.vocab_size des Teachers."
+        )
+
+        teacher_logits = teacher_logits.float()
+
+        # Même cible de consensus qu'ARCD (médiane pondérée par confiance) —
+        # C et T sont calculés et loggués à titre diagnostique, mais n'entrent
+        # PAS dans le poids de la loss ici (contrairement à ARCDLoss).
+        p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature)
+
+        l_kd = kd_loss_per_token(student_logits, p_median, temperature=self.temperature)
+
+        safe_labels = labels.clone()
+        safe_labels[~mask] = 0
+        l_ce = F.cross_entropy(
+            student_logits.reshape(-1, student_logits.size(-1)),
+            safe_labels.reshape(-1),
+            reduction="none",
+        ).view_as(labels)
+
+        alpha = self.alpha  # constant, PAS de calcul de lambda(x)
+        per_token_loss = alpha * l_kd + (1.0 - alpha) * l_ce
+        per_token_loss = per_token_loss * mask
+        loss = per_token_loss.sum() / n_valid
+
+        metrics = {
+            "loss": loss.item(),
+            "L_KD": (l_kd * mask).sum().item() / n_valid.item(),
+            "L_CE": (l_ce * mask).sum().item() / n_valid.item(),
+            "C": (C * mask).sum().item() / n_valid.item(),   # diagnostic seulement
+            "T": (T * mask).sum().item() / n_valid.item(),   # diagnostic seulement
+            "alpha": alpha,
+        }
+        return loss, metrics

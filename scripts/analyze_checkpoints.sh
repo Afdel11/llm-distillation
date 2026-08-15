@@ -19,29 +19,42 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKPOINT_ROOT="$PROJECT_ROOT/outputs/checkpoints"
 ANALYSIS_DIR="$PROJECT_ROOT/outputs/analysis"
 
+# --seed N : n'analyse que ce seed précis. Sans --seed : analyse le seed_0
+# par défaut (comportement explicite plutôt que de deviner lequel prendre
+# parmi plusieurs seeds disponibles).
+SEED_FILTER="0"
+SEED_NEXT=false
+for arg in "$@"; do
+  case "$arg" in
+    --seed=*) SEED_FILTER="${arg#--seed=}" ;;
+    --seed) SEED_NEXT=true ;;
+    *) if [[ "$SEED_NEXT" == "true" ]]; then SEED_FILTER="$arg"; SEED_NEXT=false; fi ;;
+  esac
+done
+
 mkdir -p "$ANALYSIS_DIR"
 
-CSV_FILE="$ANALYSIS_DIR/checkpoint_analysis.csv"
-TXT_FILE="$ANALYSIS_DIR/checkpoint_analysis.txt"
+CSV_FILE="$ANALYSIS_DIR/checkpoint_analysis_seed${SEED_FILTER}.csv"
+TXT_FILE="$ANALYSIS_DIR/checkpoint_analysis_seed${SEED_FILTER}.txt"
 
 echo "regime,checkpoint,epoch,eval_loss,eval_L_CE_comparable" > "$CSV_FILE"
 : > "$TXT_FILE"
 
 echo ""
 echo "============================================================"
-echo " ANALYSE DES CHECKPOINTS — KNOWLEDGE DISTILLATION"
+echo " ANALYSE DES CHECKPOINTS — SEED $SEED_FILTER"
 echo "============================================================"
 echo ""
 echo "Analyse lancée : $(date)"
 echo "Projet         : $PROJECT_ROOT"
-echo "Checkpoints    : $CHECKPOINT_ROOT"
+echo "Checkpoints    : $CHECKPOINT_ROOT/*/seed_$SEED_FILTER"
 echo ""
 
 analyze_regime() {
     local REGIME="$1"
     local DISPLAY_NAME="$2"
     local METRIC_KEY="$3"   # ex: "eval_hinton/L_CE", "eval_arcd/L_CE", ou "" (student_alone -> eval_loss lui-même)
-    local REGIME_DIR="$CHECKPOINT_ROOT/$REGIME"
+    local REGIME_DIR="$CHECKPOINT_ROOT/$REGIME/seed_$SEED_FILTER"
 
     echo ""
     echo "============================================================"
@@ -109,6 +122,7 @@ PY
 
 analyze_regime "student_alone" "BASELINE — STUDENT ALONE" ""
 analyze_regime "hinton_kd"     "HINTON — KNOWLEDGE DISTILLATION" "eval_hinton/L_CE"
+analyze_regime "multi_teacher_fixed" "MULTI-TEACHER POIDS FIXE — CONTRÔLE" "eval_fixedmt/L_CE"
 analyze_regime "arcd"          "ARCD — ADAPTIVE ROBUST CONFIDENCE DISTILLATION" "eval_arcd/L_CE"
 
 echo ""

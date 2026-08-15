@@ -1,0 +1,42 @@
+# Régime de contrôle : mêmes 2 Teachers et même cible de consensus robuste
+# qu'ARCD, mais poids de mélange CONSTANT (fixed_alpha) au lieu du lambda(x)
+# adaptatif. Sert à isoler l'effet de l'adaptivité de celui d'avoir
+# simplement 2 Teachers plutôt qu'1 (voir arcd/losses.py:FixedWeightConsensusLoss).
+#
+# Réutilise directement outputs/teacher_cache.pt / teacher_cache_val.pt
+# déjà construits pour configs/arcd.yaml -- pas besoin de relancer
+# build_teacher_cache.py si ce cache existe déjà.
+
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: "outputs/data/train.json"
+  val_examples_path: "outputs/data/val.json"
+  max_length: 256
+  batch_size: 2
+  gradient_accumulation_steps: 2
+
+models:
+  teacher_names:
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
+  student:                    # MiniQwen : IDENTIQUE à celui d'ARCD (même comparaison équitable)
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4
+    intermediate_size: 2048
+
+training:
+  regime: multi_teacher_fixed
+  device: cuda
+  epochs: 20
+  early_stopping_patience: 3
+  lr: 0.0005
+  temperature: 2.0
+  fixed_alpha: 0.5            # poids constant, l'équivalent du hinton_alpha mais pour 2 Teachers
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints
+  teacher_cache_path: outputs/teacher_cache.pt        # PARTAGÉ avec arcd.yaml
+  teacher_cache_val_path: outputs/teacher_cache_val.pt # PARTAGÉ avec arcd.yaml

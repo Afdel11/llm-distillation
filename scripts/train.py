@@ -8,6 +8,7 @@ coupure (--resume_from_checkpoint) obtenus gratuitement.
 Usage :
     python scripts/train.py --config configs/arcd.yaml
     python scripts/train.py --config configs/hinton.yaml
+    python scripts/train.py --config configs/multi_teacher_fixed.yaml
     python scripts/train.py --config configs/baseline.yaml
 """
 
@@ -28,7 +29,7 @@ from data_pipeline.dataloader import PromptResponseDataset, make_collate_fn, mak
 from data_pipeline.cache import load_teacher_cache
 from models.teacher import TeacherEnsemble
 from models.student import build_student
-from trainers.hf_trainer import ARCDTrainer, HintonTrainer, drop_keys_collate
+from trainers.hf_trainer import ARCDTrainer, HintonTrainer, FixedWeightTrainer, drop_keys_collate
 
 
 def load_config(path: str) -> dict:
@@ -105,6 +106,7 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
     metric_for_best_model = {
         "student_alone": "eval_loss",          # déjà de la CE pure, pas de mélange
         "hinton_kd": "eval_hinton/L_CE",
+        "multi_teacher_fixed": "eval_fixedmt/L_CE",
         "arcd": "eval_arcd/L_CE",
     }.get(regime, "eval_loss")
 
@@ -198,7 +200,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
         intermediate_size=student_cfg["intermediate_size"],
     )
 
-    regime = cfg["training"]["regime"]  # "student_alone" | "hinton_kd" | "arcd"
+    regime = cfg["training"]["regime"]  # "student_alone" | "hinton_kd" | "multi_teacher_fixed" | "arcd"
     print(f"\nRégime: {regime}")
     training_args = build_training_arguments(cfg, regime, has_eval=(val_dataset is not None))
 
@@ -232,6 +234,48 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             model=student, args=training_args, train_dataset=dataset, eval_dataset=val_dataset,
             data_collator=collate_fn, callbacks=callbacks,
             teacher=teacher, temperature=cfg["training"]["temperature"], alpha=cfg["training"]["hinton_alpha"],
+        )
+        trainer.train(resume_from_checkpoint=resume_ckpt)
+
+    elif regime == "multi_teacher_fixed":
+        # RÉGIME DE CONTRÔLE : réutilise EXACTEMENT le même cache que le
+        # régime "arcd" (mêmes 2 Teachers, même cible de consensus robuste
+        # P*) -> aucun nouveau calcul Teacher nécessaire si le cache ARCD
+        # existe déjà. Seule la loss diffère (poids fixe vs adaptatif).
+        cache_path = cfg["output"].get("teacher_cache_path", "outputs/teacher_cache.pt")
+        val_cache_path = cfg["output"].get("teacher_cache_val_path", "outputs/teacher_cache_val.pt")
+        teacher_ensemble = None
+
+        if os.path.exists(cache_path):
+            print(f"Cache de logits Teachers trouvé: {cache_path} — aucun forward Teacher pendant l'entraînement.")
+            teacher_logits_cache = load_teacher_cache(cache_path)
+            base_collate_fn = make_cached_collate_fn(pad_token_id=tokenizer.pad_token_id,
+                                                      teacher_logits_cache=teacher_logits_cache)
+            collate_fn = drop_keys_collate(base_collate_fn, keys=("idx",))
+        else:
+            print(f"Pas de cache trouvé ({cache_path}) — les Teachers tourneront à chaque batch.")
+            teacher_ensemble = TeacherEnsemble(cfg["models"]["teacher_names"], device=device)
+            collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=tokenizer.pad_token_id), keys=("idx",))
+
+        eval_collate_fn = collate_fn
+        if val_dataset is not None and teacher_ensemble is None:
+            if os.path.exists(val_cache_path):
+                val_teacher_logits_cache = load_teacher_cache(val_cache_path)
+                eval_collate_fn = drop_keys_collate(
+                    make_cached_collate_fn(pad_token_id=tokenizer.pad_token_id,
+                                            teacher_logits_cache=val_teacher_logits_cache),
+                    keys=("idx",),
+                )
+            else:
+                print(f"ATTENTION : cache de validation absent ({val_cache_path}) — l'évaluation va échouer. "
+                      f"Relance scripts/build_teacher_cache.py.")
+
+        trainer = FixedWeightTrainer(
+            model=student, args=training_args, train_dataset=dataset, eval_dataset=val_dataset,
+            data_collator=collate_fn,
+            eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
+            callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
+            alpha=cfg["training"].get("fixed_alpha", 0.5),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 

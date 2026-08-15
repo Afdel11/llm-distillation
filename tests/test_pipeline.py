@@ -15,7 +15,7 @@ from models.teacher import DebugTeacherEnsemble
 from models.student import build_student
 from data_pipeline.dataloader import PromptResponseDataset, make_collate_fn, make_cached_collate_fn
 from data_pipeline.cache import build_teacher_cache
-from trainers.hf_trainer import ARCDTrainer, HintonTrainer, drop_keys_collate
+from trainers.hf_trainer import ARCDTrainer, HintonTrainer, FixedWeightTrainer, drop_keys_collate
 
 VOCAB_SIZE = 128  # doit couvrir les ids générés par DebugTokenizer (mots courts)
 
@@ -116,6 +116,67 @@ def test_arcd_trainer_cached_teachers_runs_without_error(debug_tokenizer):
                                train_dataset=dataset, data_collator=collate_fn,
                                teacher_ensemble=None, temperature=2.0)  # pas d'ensemble : lit le cache
         trainer.train()
+
+
+def test_fixedweight_trainer_live_teachers_runs_without_error(debug_tokenizer):
+    """Régime de contrôle (multi_teacher_fixed) : mêmes Teachers qu'ARCD,
+    même consensus robuste, mais poids CONSTANT. Vérifie que la classe
+    tourne indépendamment d'ARCDTrainer, sans rien y toucher."""
+    torch.manual_seed(0)
+    dataset = _dataset(debug_tokenizer)
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
+
+    ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
+    student = _new_student()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = FixedWeightTrainer(model=student, args=_training_args(tmpdir),
+                                      train_dataset=dataset, data_collator=collate_fn,
+                                      teacher_ensemble=ensemble, temperature=2.0, alpha=0.5)
+        trainer.train()
+
+
+def test_fixedweight_trainer_cached_teachers_runs_without_error(debug_tokenizer):
+    """Même test en mode cache — celui réellement utilisé en production,
+    puisque multi_teacher_fixed réutilise le cache déjà construit pour arcd."""
+    torch.manual_seed(0)
+    dataset = _dataset(debug_tokenizer)
+
+    ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
+    cache = build_teacher_cache(ensemble, dataset, pad_token_id=debug_tokenizer.pad_token_id,
+                                 device="cpu", batch_size=2)
+
+    base_collate_fn = make_cached_collate_fn(pad_token_id=debug_tokenizer.pad_token_id,
+                                              teacher_logits_cache=cache)
+    collate_fn = drop_keys_collate(base_collate_fn, keys=("idx",))
+    student = _new_student()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = FixedWeightTrainer(model=student, args=_training_args(tmpdir),
+                                      train_dataset=dataset, data_collator=collate_fn,
+                                      teacher_ensemble=None, temperature=2.0, alpha=0.5)
+        trainer.train()
+
+
+def test_fixedweight_alpha_stays_constant_across_steps(debug_tokenizer):
+    """Vérifie la propriété qui définit ce régime de contrôle : alpha ne doit
+    JAMAIS varier d'un batch à l'autre, contrairement à lambda(x) dans ARCD."""
+    from arcd.losses import FixedWeightConsensusLoss
+
+    torch.manual_seed(0)
+    batch, seq_len, num_teachers, vocab_size = 2, 8, 2, 200
+    student_logits = torch.randn(batch, seq_len, vocab_size, requires_grad=True)
+    teacher_logits = torch.randn(batch, seq_len, num_teachers, vocab_size)
+    labels = torch.randint(0, vocab_size, (batch, seq_len))
+
+    criterion = FixedWeightConsensusLoss(temperature=2.0, alpha=0.5)
+    _, metrics1 = criterion(student_logits, teacher_logits, labels)
+
+    # Un second batch complètement différent -> alpha doit rester identique
+    teacher_logits_2 = torch.randn(batch, seq_len, num_teachers, vocab_size)
+    _, metrics2 = criterion(student_logits, teacher_logits_2, labels)
+
+    assert metrics1["alpha"] == metrics2["alpha"] == 0.5
 
 
 def test_arcd_trainer_eval_with_distinct_cache_does_not_crash(debug_tokenizer):

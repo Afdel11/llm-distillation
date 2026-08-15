@@ -16,19 +16,22 @@ Ce qui NE change PAS : le cœur ARCD (arcd/confidence.py, consensus.py,
 losses.py, metrics.py) est utilisé tel quel — seule la boucle qui l'appelle
 change d'implémentation.
 
-Trois régimes :
-  - "student_alone" : transformers.Trainer standard, sans sous-classe.
+Quatre régimes :
+  - "student_alone"      : transformers.Trainer standard, sans sous-classe.
     Le batch contient déjà "labels" -> le modèle calcule sa propre
     cross-entropy nativement, rien à personnaliser.
-  - "hinton_kd"      : HintonTrainer (1 Teacher, lambda fixe)
-  - "arcd"           : ARCDTrainer (N Teachers, lambda par token)
+  - "hinton_kd"           : HintonTrainer (1 Teacher, lambda fixe)
+  - "multi_teacher_fixed" : FixedWeightTrainer (2 Teachers, MÊME consensus
+    robuste qu'ARCD, mais lambda CONSTANT) — régime de contrôle, isole
+    l'effet de l'adaptivité de celui d'avoir simplement 2 Teachers.
+  - "arcd"                : ARCDTrainer (N Teachers, lambda par token adaptatif)
 """
 
 import torch
 import torch.nn.functional as F
 from transformers import Trainer
 
-from arcd.losses import ARCDLoss, IGNORE_INDEX
+from arcd.losses import ARCDLoss, FixedWeightConsensusLoss, IGNORE_INDEX
 
 
 def drop_keys_collate(collate_fn, keys: tuple):
@@ -184,4 +187,76 @@ class ARCDTrainer(Trainer):
             for k in keys:
                 avg = sum(d[k] for d in self._eval_metrics_buffer) / len(self._eval_metrics_buffer)
                 output.metrics[f"{metric_key_prefix}_arcd/{k}"] = avg
+        return output
+
+
+class FixedWeightTrainer(Trainer):
+    """
+    RÉGIME DE CONTRÔLE (multi_teacher_fixed) — mêmes 2 Teachers et même
+    cible de consensus robuste qu'ARCDTrainer, mais poids de mélange
+    ALPHA CONSTANT au lieu de lambda(x) adaptatif. Sert à isoler l'effet
+    de la pondération adaptative de celui d'avoir simplement 2 Teachers
+    plutôt qu'1 (voir arcd/losses.py:FixedWeightConsensusLoss).
+
+    Structure volontairement identique à ARCDTrainer (même gestion du
+    cache, du collate d'évaluation séparé, du logging) pour que la seule
+    différence entre les deux classes soit la loss utilisée.
+    """
+
+    def __init__(self, *args, teacher_ensemble=None, temperature: float = 2.0,
+                 alpha: float = 0.5, eval_data_collator=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.teacher_ensemble = teacher_ensemble
+        self.fixed_loss = FixedWeightConsensusLoss(temperature=temperature, alpha=alpha)
+        self._eval_data_collator = eval_data_collator
+        self._eval_metrics_buffer = []
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        if self._eval_data_collator is None:
+            return super().get_eval_dataloader(eval_dataset)
+        original_collator = self.data_collator
+        self.data_collator = self._eval_data_collator
+        try:
+            return super().get_eval_dataloader(eval_dataset)
+        finally:
+            self.data_collator = original_collator
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.pop("labels")
+        teacher_logits_cached = inputs.pop("teacher_logits", None)
+
+        student_outputs = model(**inputs)
+        student_logits = student_outputs.logits
+
+        if teacher_logits_cached is not None:
+            teacher_logits = teacher_logits_cached.to(student_logits.device)
+        else:
+            assert self.teacher_ensemble is not None, (
+                "Ni cache de logits Teachers dans le batch, ni teacher_ensemble fourni. "
+                "Lance scripts/build_teacher_cache.py, ou passe teacher_ensemble à FixedWeightTrainer."
+            )
+            self.teacher_ensemble.to(student_logits.device)
+            teacher_logits = self.teacher_ensemble(inputs["input_ids"], inputs["attention_mask"])
+
+        loss, metrics = self.fixed_loss(student_logits, teacher_logits, labels)
+
+        if model.training:
+            self.log({f"fixedmt/{k}": v for k, v in metrics.items()})
+        else:
+            self._eval_metrics_buffer.append(metrics)
+
+        return (loss, student_outputs) if return_outputs else loss
+
+    def evaluation_loop(self, dataloader, description, prediction_loss_only=None,
+                         ignore_keys=None, metric_key_prefix="eval"):
+        self._eval_metrics_buffer = []
+        output = super().evaluation_loop(
+            dataloader, description, prediction_loss_only=prediction_loss_only,
+            ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix,
+        )
+        if self._eval_metrics_buffer:
+            keys = self._eval_metrics_buffer[0].keys()
+            for k in keys:
+                avg = sum(d[k] for d in self._eval_metrics_buffer) / len(self._eval_metrics_buffer)
+                output.metrics[f"{metric_key_prefix}_fixedmt/{k}"] = avg
         return output
