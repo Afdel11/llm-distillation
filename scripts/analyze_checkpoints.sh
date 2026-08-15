@@ -124,6 +124,7 @@ analyze_regime "student_alone" "BASELINE — STUDENT ALONE" ""
 analyze_regime "hinton_kd"     "HINTON — KNOWLEDGE DISTILLATION" "eval_hinton/L_CE"
 analyze_regime "multi_teacher_fixed" "MULTI-TEACHER POIDS FIXE — CONTRÔLE" "eval_fixedmt/L_CE"
 analyze_regime "arcd"          "ARCD — ADAPTIVE ROBUST CONFIDENCE DISTILLATION" "eval_arcd/L_CE"
+analyze_regime "arcd_diverse"  "ARCD — TEACHER DIVERSIFIÉ (CODER)" "eval_arcd/L_CE"
 
 echo ""
 echo "============================================================"

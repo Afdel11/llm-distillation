@@ -20,7 +20,10 @@
 #   bash scripts/run_seeds.sh --regimes multi_teacher_fixed 0 1 2
 #       -> ne lance QUE le nouveau régime de contrôle, sans retoucher aux
 #          baseline/hinton/arcd déjà entraînés pour ces mêmes seeds.
-#   bash scripts/run_seeds.sh --regimes hinton_kd,arcd 0 1 2
+#   bash scripts/run_seeds.sh --regimes arcd_diverse 0 1 2
+#       -> variante ARCD avec Teacher diversifié (Qwen2.5-Coder), volontairement
+#          ABSENTE de la liste de régimes par défaut -> jamais lancée par accident.
+#   bash scripts/run_seeds.sh --regimes hinton,arcd 0 1 2
 #       -> plusieurs régimes précis, séparés par des virgules.
 
 set -euo pipefail
@@ -49,7 +52,7 @@ if [ "${#SEEDS[@]}" -eq 0 ]; then
 fi
 
 if [[ -z "$REGIMES_ARG" ]]; then
-  REGIMES=(baseline hinton multi_teacher_fixed arcd)
+  REGIMES=(baseline hinton multi_teacher_fixed arcd)   # arcd_diverse volontairement ABSENT du défaut
 else
   IFS=',' read -ra REGIMES <<< "$REGIMES_ARG"
 fi
@@ -59,12 +62,14 @@ declare -A CONFIG_FILE=(
   [hinton]="configs/hinton.yaml"
   [multi_teacher_fixed]="configs/multi_teacher_fixed.yaml"
   [arcd]="configs/arcd.yaml"
+  [arcd_diverse]="configs/arcd_diverse.yaml"
 )
 declare -A DISPLAY_NAME=(
   [baseline]="Baseline (student_alone)"
   [hinton]="Hinton KD"
   [multi_teacher_fixed]="Multi-Teacher poids fixe (contrôle)"
   [arcd]="ARCD"
+  [arcd_diverse]="ARCD (Teacher diversifié — Coder)"
 )
 
 section () {
@@ -75,8 +80,30 @@ section () {
 }
 
 if [[ "$SKIP_CACHE" == "false" ]]; then
-  section "Cache Teacher (une seule fois, partagé arcd + multi_teacher_fixed)"
-  python scripts/build_teacher_cache.py --config configs/arcd.yaml
+  # Construit le cache Teacher UNIQUEMENT pour les configs réellement utilisées
+  # par les régimes sélectionnés : "arcd"/"multi_teacher_fixed" partagent le
+  # cache standard (configs/arcd.yaml) ; "arcd_diverse" a son PROPRE cache
+  # (Teacher différent -> logits différents, voir configs/arcd_diverse.yaml).
+  NEEDS_STANDARD_CACHE=false
+  NEEDS_DIVERSE_CACHE=false
+  for regime in "${REGIMES[@]}"; do
+    case "$regime" in
+      arcd|multi_teacher_fixed) NEEDS_STANDARD_CACHE=true ;;
+      arcd_diverse) NEEDS_DIVERSE_CACHE=true ;;
+    esac
+  done
+
+  if [[ "$NEEDS_STANDARD_CACHE" == "true" ]]; then
+    section "Cache Teacher standard (partagé arcd + multi_teacher_fixed)"
+    python scripts/build_teacher_cache.py --config configs/arcd.yaml
+  fi
+  if [[ "$NEEDS_DIVERSE_CACHE" == "true" ]]; then
+    section "Cache Teacher diversifié (arcd_diverse uniquement)"
+    python scripts/build_teacher_cache.py --config configs/arcd_diverse.yaml
+  fi
+  if [[ "$NEEDS_STANDARD_CACHE" == "false" && "$NEEDS_DIVERSE_CACHE" == "false" ]]; then
+    echo "Aucun régime sélectionné n'a besoin d'un cache Teacher (baseline/hinton seuls)."
+  fi
 else
   echo "Cache ignoré (--skip-cache)."
 fi

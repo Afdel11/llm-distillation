@@ -25,12 +25,14 @@ REGIME_DISPLAY = {
     "hinton_kd": "Hinton KD",
     "multi_teacher_fixed": "Multi-Teacher poids fixe (contrôle)",
     "arcd": "ARCD (méthode proposée)",
+    "arcd_diverse": "ARCD (Teacher diversifié)",
 }
 REGIME_COLOR = {
     "student_alone": "#808080",
     "hinton_kd": "#5B8FD6",
     "multi_teacher_fixed": "#E8A33D",
     "arcd": "#D65B5B",
+    "arcd_diverse": "#7B3FA0",
 }
 
 
@@ -46,7 +48,7 @@ def main():
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    for regime in ["student_alone", "hinton_kd", "multi_teacher_fixed", "arcd"]:
+    for regime in ["student_alone", "hinton_kd", "multi_teacher_fixed", "arcd", "arcd_diverse"]:
         sub = df[df["regime"] == regime]
         if sub.empty:
             continue

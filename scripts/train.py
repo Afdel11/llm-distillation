@@ -108,6 +108,7 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
         "hinton_kd": "eval_hinton/L_CE",
         "multi_teacher_fixed": "eval_fixedmt/L_CE",
         "arcd": "eval_arcd/L_CE",
+        "arcd_diverse": "eval_arcd/L_CE",   # même ARCDTrainer, même préfixe de log -> même clé
     }.get(regime, "eval_loss")
 
     return TrainingArguments(
@@ -200,7 +201,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
         intermediate_size=student_cfg["intermediate_size"],
     )
 
-    regime = cfg["training"]["regime"]  # "student_alone" | "hinton_kd" | "multi_teacher_fixed" | "arcd"
+    regime = cfg["training"]["regime"]  # "student_alone" | "hinton_kd" | "multi_teacher_fixed" | "arcd" | "arcd_diverse"
     print(f"\nRégime: {regime}")
     training_args = build_training_arguments(cfg, regime, has_eval=(val_dataset is not None))
 
@@ -279,7 +280,12 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 
-    elif regime == "arcd":
+    elif regime in ("arcd", "arcd_diverse"):
+        # "arcd_diverse" est un ALIAS d'"arcd" : même ARCDTrainer, mêmes clés
+        # de log ("arcd/...", "eval_arcd/..."), SEULE la config des Teachers
+        # diffère (voir configs/arcd_diverse.yaml). Chemins de checkpoint et
+        # de cache dérivés de `regime`, donc automatiquement séparés de ceux
+        # du régime "arcd" standard -> aucun risque d'écraser les runs existants.
         cache_path = cfg["output"].get("teacher_cache_path", "outputs/teacher_cache.pt")
         val_cache_path = cfg["output"].get("teacher_cache_val_path", "outputs/teacher_cache_val.pt")
         teacher_ensemble = None

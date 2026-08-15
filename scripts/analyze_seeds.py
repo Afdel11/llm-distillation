@@ -34,6 +34,7 @@ REGIME_METRIC = {
     "hinton_kd": "eval_hinton/L_CE",
     "multi_teacher_fixed": "eval_fixedmt/L_CE",
     "arcd": "eval_arcd/L_CE",
+    "arcd_diverse": "eval_arcd/L_CE",   # même trainer/préfixe de log qu'"arcd"
 }
 
 # Préfixe utilisé pour retrouver C et T à l'epoch retenu -- None si le
@@ -43,6 +44,7 @@ REGIME_CT_PREFIX = {
     "hinton_kd": None,
     "multi_teacher_fixed": "eval_fixedmt",
     "arcd": "eval_arcd",
+    "arcd_diverse": "eval_arcd",
 }
 
 REGIME_DISPLAY = {
@@ -50,6 +52,7 @@ REGIME_DISPLAY = {
     "hinton_kd": "Hinton KD",
     "multi_teacher_fixed": "Multi-Teacher poids fixe (contrôle)",
     "arcd": "ARCD",
+    "arcd_diverse": "ARCD (Teacher diversifié — Coder)",
 }
 
 

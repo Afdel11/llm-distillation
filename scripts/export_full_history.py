@@ -22,6 +22,7 @@ REGIME_METRIC = {
     "hinton_kd": "eval_hinton/L_CE",
     "multi_teacher_fixed": "eval_fixedmt/L_CE",
     "arcd": "eval_arcd/L_CE",
+    "arcd_diverse": "eval_arcd/L_CE",
 }
 
 
