@@ -12,3 +12,11 @@ outputs/**/optimizer.pt
 outputs/**/scheduler.pt
 outputs/**/rng_state.pth
 outputs/**/training_args.bin
+# Checkpoints et modèles lourds
+outputs/checkpoints/
+
+# Caches Teacher très volumineux
+outputs/teacher_cache*.pt
+
+# Large teacher caches
+outputs/teacher_cache*.pt
