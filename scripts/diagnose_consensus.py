@@ -17,6 +17,7 @@ import argparse
 import os
 import statistics
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,30 +32,41 @@ def main():
     parser.add_argument("--cache", type=str, default="outputs/teacher_cache_val.pt")
     parser.add_argument("--temperature", type=float, default=2.0)
     parser.add_argument("--top_ks", type=str, default="None,200,100,50,20,10,5,1")
+    parser.add_argument("--max_examples", type=int, default=20,
+                         help="Limite le nombre d'exemples du cache utilisés, pour un premier "
+                              "diagnostic rapide. Mets une grande valeur (ou -1) pour tout utiliser.")
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
+    print(f"Device: {args.device}")
     print(f"Chargement du cache : {args.cache}")
     cache = load_teacher_cache(args.cache)
-    print(f"  {len(cache)} exemples en cache\n")
+    print(f"  {len(cache)} exemples en cache")
+
+    items = list(cache.items())
+    if args.max_examples > 0:
+        items = items[:args.max_examples]
+    print(f"  {len(items)} exemples utilisés pour ce diagnostic\n")
 
     top_k_values = [None if v == "None" else int(v) for v in args.top_ks.split(",")]
 
-    print(f"{'top_k':>8} | {'C moyen':>12} | {'C écart-type':>14} | {'C min':>10} | {'C max':>10}")
-    print("-" * 68)
+    print(f"{'top_k':>8} | {'C moyen':>12} | {'C écart-type':>14} | {'C min':>10} | {'C max':>10} | {'temps':>8}")
+    print("-" * 80)
 
     for top_k in top_k_values:
+        t0 = time.time()
         all_C = []
-        for idx, teacher_logits in cache.items():
-            # teacher_logits attendu: (seq_len, num_teachers, vocab_size)
-            tl = teacher_logits.unsqueeze(0).float()  # ajoute l'axe batch -> (1, seq_len, teachers, vocab)
+        for idx, teacher_logits in items:
+            tl = teacher_logits.unsqueeze(0).float().to(args.device)  # (1, seq_len, teachers, vocab)
             _, C, _, _ = robust_consensus(tl, temperature=args.temperature, top_k=top_k)
-            all_C.extend(C.flatten().tolist())
+            all_C.extend(C.flatten().cpu().tolist())
 
+        elapsed = time.time() - t0
         mean_C = statistics.mean(all_C)
         std_C = statistics.stdev(all_C) if len(all_C) > 1 else 0.0
         min_C, max_C = min(all_C), max(all_C)
         label = "complet" if top_k is None else str(top_k)
-        print(f"{label:>8} | {mean_C:>12.6f} | {std_C:>14.8f} | {min_C:>10.6f} | {max_C:>10.6f}")
+        print(f"{label:>8} | {mean_C:>12.6f} | {std_C:>14.8f} | {min_C:>10.6f} | {max_C:>10.6f} | {elapsed:>6.1f}s")
 
     print()
     print("Lecture : si C moyen baisse et l'écart-type augmente à mesure que top_k")
