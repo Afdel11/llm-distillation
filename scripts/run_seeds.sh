@@ -63,6 +63,9 @@ declare -A CONFIG_FILE=(
   [multi_teacher_fixed]="configs/multi_teacher_fixed.yaml"
   [arcd]="configs/arcd.yaml"
   [arcd_diverse]="configs/arcd_diverse.yaml"
+  [arcd_topk]="configs/arcd_topk.yaml"
+  [arcd_topk_diverse]="configs/arcd_topk_diverse.yaml"
+  [arcd_topk_10k]="configs/arcd_topk_10k.yaml"
 )
 declare -A DISPLAY_NAME=(
   [baseline]="Baseline (student_alone)"
@@ -70,6 +73,9 @@ declare -A DISPLAY_NAME=(
   [multi_teacher_fixed]="Multi-Teacher poids fixe (contrôle)"
   [arcd]="ARCD"
   [arcd_diverse]="ARCD (Teacher diversifié — Coder)"
+  [arcd_topk]="ARCD (consensus top_k=10)"
+  [arcd_topk_diverse]="ARCD (top_k=10 + Teacher diversifié)"
+  [arcd_topk_10k]="ARCD (top_k=10, dataset 9000 exemples)"
 )
 
 section () {
@@ -88,8 +94,8 @@ if [[ "$SKIP_CACHE" == "false" ]]; then
   NEEDS_DIVERSE_CACHE=false
   for regime in "${REGIMES[@]}"; do
     case "$regime" in
-      arcd|multi_teacher_fixed) NEEDS_STANDARD_CACHE=true ;;
-      arcd_diverse) NEEDS_DIVERSE_CACHE=true ;;
+      arcd|multi_teacher_fixed|arcd_topk|arcd_topk_10k) NEEDS_STANDARD_CACHE=true ;;
+      arcd_diverse|arcd_topk_diverse) NEEDS_DIVERSE_CACHE=true ;;
     esac
   done
 

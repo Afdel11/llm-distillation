@@ -109,6 +109,9 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
         "multi_teacher_fixed": "eval_fixedmt/L_CE",
         "arcd": "eval_arcd/L_CE",
         "arcd_diverse": "eval_arcd/L_CE",   # même ARCDTrainer, même préfixe de log -> même clé
+        "arcd_topk": "eval_arcd/L_CE",
+        "arcd_topk_diverse": "eval_arcd/L_CE",
+        "arcd_topk_10k": "eval_arcd/L_CE",
     }.get(regime, "eval_loss")
 
     return TrainingArguments(
@@ -280,7 +283,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 
-    elif regime in ("arcd", "arcd_diverse"):
+    elif regime in ("arcd", "arcd_diverse", "arcd_topk", "arcd_topk_diverse", "arcd_topk_10k"):
         # "arcd_diverse" est un ALIAS d'"arcd" : même ARCDTrainer, mêmes clés
         # de log ("arcd/...", "eval_arcd/..."), SEULE la config des Teachers
         # diffère (voir configs/arcd_diverse.yaml). Chemins de checkpoint et
@@ -324,6 +327,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             data_collator=collate_fn,
             eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
+            top_k=cfg["training"].get("consensus_top_k"),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 

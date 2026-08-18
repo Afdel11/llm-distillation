@@ -50,10 +50,11 @@ class ARCDLoss(nn.Module):
         loss.backward()
     """
 
-    def __init__(self, temperature: float = 2.0, eps: float = EPS):
+    def __init__(self, temperature: float = 2.0, eps: float = EPS, top_k: int = None):
         super().__init__()
         self.temperature = temperature
         self.eps = eps
+        self.top_k = top_k
 
     def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
         """
@@ -83,7 +84,7 @@ class ARCDLoss(nn.Module):
         # passante mémoire GPU, pas PCIe).
         teacher_logits = teacher_logits.float()
 
-        p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature)
+        p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature, top_k=self.top_k)
         S = student_confidence(student_logits, temperature=self.temperature)
 
         lam = adaptive_lambda(C, T, S)  # (batch, seq_len)
@@ -133,11 +134,12 @@ class FixedWeightConsensusLoss(nn.Module):
         loss, metrics = criterion(student_logits, teacher_logits, labels)
     """
 
-    def __init__(self, temperature: float = 2.0, alpha: float = 0.5, eps: float = EPS):
+    def __init__(self, temperature: float = 2.0, alpha: float = 0.5, eps: float = EPS, top_k: int = None):
         super().__init__()
         self.temperature = temperature
         self.alpha = alpha
         self.eps = eps
+        self.top_k = top_k
 
     def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
         mask = (labels != IGNORE_INDEX)
@@ -153,7 +155,7 @@ class FixedWeightConsensusLoss(nn.Module):
         # Même cible de consensus qu'ARCD (médiane pondérée par confiance) —
         # C et T sont calculés et loggués à titre diagnostique, mais n'entrent
         # PAS dans le poids de la loss ici (contrairement à ARCDLoss).
-        p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature)
+        p_median, C, T, _ = robust_consensus(teacher_logits, temperature=self.temperature, top_k=self.top_k)
 
         l_kd = kd_loss_per_token(student_logits, p_median, temperature=self.temperature)
 
