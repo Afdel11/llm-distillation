@@ -25,8 +25,12 @@ def test_tokenizer_loads(real_tokenizer):
 
 
 def test_vocab_size_matches_qwen25_documentation(real_tokenizer):
-    # Qwen2.5 documente un vocabulaire de 151 936 tokens.
-    assert len(real_tokenizer) == 151936
+    # len(tokenizer) = 151665 (tokens réellement adressables par le tokenizer).
+    # ATTENTION : ne pas confondre avec model.config.vocab_size = 151936,
+    # la taille de sortie du modèle (arrondie à un multiple de 128 pour
+    # l'efficacité GPU) -- deux quantités différentes, voir chapitre 4 du
+    # mémoire, section 4.9.2, pour l'incident que cette confusion a causé.
+    assert len(real_tokenizer) == 151665
 
 
 def test_tokenizer_encodes_french_text(real_tokenizer):
