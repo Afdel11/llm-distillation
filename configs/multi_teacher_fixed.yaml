@@ -35,9 +35,6 @@ training:
   temperature: 2.0
   fixed_alpha: 0.5            # poids constant, l'équivalent du hinton_alpha mais pour 2 Teachers
   seed: 0
-  # Voir configs/arcd.yaml — MÊME valeur ici : C n'entre pas dans la loss de
-  # ce régime (poids fixe), mais doit rester comparable au C loggué par arcd.
-  consensus_top_k: 50
 
 output:
   checkpoint_dir: outputs/checkpoints

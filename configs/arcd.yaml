@@ -26,14 +26,6 @@ training:
   temperature: 2.0
   hinton_alpha: 0.5
   seed: 0
-  # Restreint le calcul de C (score de consensus) aux top_k positions du
-  # vocabulaire où le consensus concentre sa masse, au lieu de moyenner le
-  # MAD sur les 151 936 positions (voir arcd/consensus.py:robust_consensus).
-  # Sans cette clé (ou avec null), C retombe sur l'ancien comportement dilué.
-  # 50 est un point de départ raisonnable ; affiner avec
-  # scripts/diagnose_consensus.py --cache outputs/teacher_cache_val.pt
-  # avant un run long, si besoin.
-  consensus_top_k: 50
 
 output:
   checkpoint_dir: outputs/checkpoints
