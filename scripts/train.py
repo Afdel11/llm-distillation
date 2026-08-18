@@ -277,6 +277,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
             alpha=cfg["training"].get("fixed_alpha", 0.5),
+            top_k=cfg["training"].get("consensus_top_k"),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 
@@ -324,6 +325,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             data_collator=collate_fn,
             eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
+            top_k=cfg["training"].get("consensus_top_k"),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 

@@ -118,6 +118,29 @@ def test_arcd_trainer_cached_teachers_runs_without_error(debug_tokenizer):
         trainer.train()
 
 
+def test_arcd_trainer_top_k_reaches_loss_and_runs(debug_tokenizer):
+    """
+    Câblage de bout en bout côté Trainer : top_k passé à ARCDTrainer doit
+    atteindre ARCDLoss (pas juste être accepté puis ignoré), et
+    l'entraînement doit tourner sans erreur avec cette option active —
+    c'est exactement le chemin emprunté par scripts/train.py en production
+    (via cfg["training"]["consensus_top_k"]).
+    """
+    torch.manual_seed(0)
+    dataset = _dataset(debug_tokenizer)
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
+
+    ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
+    student = _new_student()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = ARCDTrainer(model=student, args=_training_args(tmpdir),
+                               train_dataset=dataset, data_collator=collate_fn,
+                               teacher_ensemble=ensemble, temperature=2.0, top_k=10)
+        assert trainer.arcd_loss.top_k == 10
+        trainer.train()
+
+
 def test_fixedweight_trainer_live_teachers_runs_without_error(debug_tokenizer):
     """Régime de contrôle (multi_teacher_fixed) : mêmes Teachers qu'ARCD,
     même consensus robuste, mais poids CONSTANT. Vérifie que la classe

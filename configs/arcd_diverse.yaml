@@ -38,6 +38,10 @@ training:
   lr: 0.0005
   temperature: 2.0
   seed: 0
+  # Voir configs/arcd.yaml — MÊME valeur ici pour que le "C" loggué reste
+  # comparable entre arcd et arcd_diverse (la diversité des Teachers est la
+  # seule variable qui doit changer entre les deux régimes).
+  consensus_top_k: 50
 
 output:
   checkpoint_dir: outputs/checkpoints
