@@ -1,7 +1,7 @@
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
-  examples_path: "outputs/data/train.json"
-  val_examples_path: "outputs/data/val.json"
+  examples_path: "outputs/data_10k/train.json"
+  val_examples_path: "outputs/data_10k/val.json"
   max_length: 256
   batch_size: 2
   gradient_accumulation_steps: 2
@@ -29,5 +29,7 @@ training:
 
 output:
   checkpoint_dir: outputs/checkpoints
-  teacher_cache_path: outputs/teacher_cache_diverse.pt
-  teacher_cache_val_path: outputs/teacher_cache_val_diverse.pt
+  # Teacher large différent (Coder) -> cache dédié, dataset 9000 exemples
+  # (SÉPARÉ du cache diversifié 900 exemples utilisé par arcd_diverse).
+  teacher_cache_path: outputs/teacher_cache_diverse_10k.pt
+  teacher_cache_val_path: outputs/teacher_cache_val_diverse_10k.pt

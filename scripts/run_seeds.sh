@@ -90,24 +90,43 @@ if [[ "$SKIP_CACHE" == "false" ]]; then
   # par les régimes sélectionnés : "arcd"/"multi_teacher_fixed" partagent le
   # cache standard (configs/arcd.yaml) ; "arcd_diverse" a son PROPRE cache
   # (Teacher différent -> logits différents, voir configs/arcd_diverse.yaml).
+  # 4 groupes indépendants : standard/diversifié x 900/9000 exemples. Chaque
+  # groupe a son propre fichier de cache (voir configs/*.yaml) -> jamais
+  # mélanger un cache bâti sur 900 exemples avec un régime qui en attend 9000
+  # (c'est exactement ce qui a produit des logs "900 exemples" inattendus
+  # pour arcd_topk/arcd_topk_diverse avant que leurs configs ne soient
+  # alignées sur outputs/data_10k).
   NEEDS_STANDARD_CACHE=false
   NEEDS_DIVERSE_CACHE=false
+  NEEDS_10K_CACHE=false
+  NEEDS_DIVERSE_10K_CACHE=false
   for regime in "${REGIMES[@]}"; do
     case "$regime" in
-      arcd|multi_teacher_fixed|arcd_topk|arcd_topk_10k) NEEDS_STANDARD_CACHE=true ;;
-      arcd_diverse|arcd_topk_diverse) NEEDS_DIVERSE_CACHE=true ;;
+      arcd|multi_teacher_fixed) NEEDS_STANDARD_CACHE=true ;;
+      arcd_diverse) NEEDS_DIVERSE_CACHE=true ;;
+      arcd_topk|arcd_topk_10k) NEEDS_10K_CACHE=true ;;
+      arcd_topk_diverse) NEEDS_DIVERSE_10K_CACHE=true ;;
     esac
   done
 
   if [[ "$NEEDS_STANDARD_CACHE" == "true" ]]; then
-    section "Cache Teacher standard (partagé arcd + multi_teacher_fixed)"
+    section "Cache Teacher standard, 900 exemples (partagé arcd + multi_teacher_fixed)"
     python scripts/build_teacher_cache.py --config configs/arcd.yaml
   fi
   if [[ "$NEEDS_DIVERSE_CACHE" == "true" ]]; then
-    section "Cache Teacher diversifié (arcd_diverse uniquement)"
+    section "Cache Teacher diversifié, 900 exemples (arcd_diverse uniquement)"
     python scripts/build_teacher_cache.py --config configs/arcd_diverse.yaml
   fi
-  if [[ "$NEEDS_STANDARD_CACHE" == "false" && "$NEEDS_DIVERSE_CACHE" == "false" ]]; then
+  if [[ "$NEEDS_10K_CACHE" == "true" ]]; then
+    section "Cache Teacher standard, 9000 exemples (partagé arcd_topk + arcd_topk_10k)"
+    python scripts/build_teacher_cache.py --config configs/arcd_topk_10k.yaml
+  fi
+  if [[ "$NEEDS_DIVERSE_10K_CACHE" == "true" ]]; then
+    section "Cache Teacher diversifié, 9000 exemples (arcd_topk_diverse uniquement)"
+    python scripts/build_teacher_cache.py --config configs/arcd_topk_diverse.yaml
+  fi
+  if [[ "$NEEDS_STANDARD_CACHE" == "false" && "$NEEDS_DIVERSE_CACHE" == "false" \
+        && "$NEEDS_10K_CACHE" == "false" && "$NEEDS_DIVERSE_10K_CACHE" == "false" ]]; then
     echo "Aucun régime sélectionné n'a besoin d'un cache Teacher (baseline/hinton seuls)."
   fi
 else
