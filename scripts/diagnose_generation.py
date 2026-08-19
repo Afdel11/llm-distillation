@@ -49,8 +49,18 @@ def main():
         prompt = example["prompt"]
         true_response = example["response"]
 
-        prompt_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(args.device)
-        true_response_ids = tokenizer(true_response, return_tensors="pt")["input_ids"].to(args.device)[0]
+        # IMPORTANT : reproduit EXACTEMENT la tokenisation de build_example()
+        # (data_pipeline/prompts.py), utilisée pendant tout l'entraînement --
+        # add_special_tokens=False partout, EOS ajouté explicitement à la fin
+        # de la réponse. Un tokenizer() par défaut (sans ce paramètre) peut
+        # ajouter un token spécial que le modèle n'a JAMAIS vu à cette
+        # position pendant l'entraînement, décalant toute la comparaison.
+        prompt_ids_list = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        response_ids_list = tokenizer(true_response, add_special_tokens=False)["input_ids"]
+        eos_id = tokenizer.eos_token_id
+
+        prompt_ids = torch.tensor([prompt_ids_list], device=args.device)
+        true_response_ids = torch.tensor(response_ids_list + [eos_id], device=args.device)
 
         print(f"\n{'=' * 78}")
         print(f"Exemple {ex_idx + 1} — Prompt : {prompt.strip()[:70]}...")
