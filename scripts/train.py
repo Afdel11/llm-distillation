@@ -345,6 +345,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
             top_k=cfg["training"].get("consensus_top_k"),
             max_lambda=cfg["training"].get("max_lambda"),
+            anti_copy_weight=cfg["training"].get("anti_copy_weight"),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 

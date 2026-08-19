@@ -122,10 +122,12 @@ class ARCDTrainer(Trainer):
     """Méthode proposée : lambda(x) = C * T * (1 - S), calculé par token."""
 
     def __init__(self, *args, teacher_ensemble=None, temperature: float = 2.0,
-                 eval_data_collator=None, top_k: int = None, max_lambda: float = None, **kwargs):
+                 eval_data_collator=None, top_k: int = None, max_lambda: float = None,
+                 anti_copy_weight: float = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.teacher_ensemble = teacher_ensemble  # None si on utilise uniquement le cache
-        self.arcd_loss = ARCDLoss(temperature=temperature, top_k=top_k, max_lambda=max_lambda)
+        self.arcd_loss = ARCDLoss(temperature=temperature, top_k=top_k, max_lambda=max_lambda,
+                                   anti_copy_weight=anti_copy_weight)
         # transformers.Trainer ne supporte qu'un seul data_collator (train ET eval).
         # Ici, train utilise le cache d'entraînement et eval le cache de validation
         # (deux fichiers distincts, indices non interchangeables) -> on a besoin
@@ -162,7 +164,7 @@ class ARCDTrainer(Trainer):
             self.teacher_ensemble.to(student_logits.device)
             teacher_logits = self.teacher_ensemble(inputs["input_ids"], inputs["attention_mask"])
 
-        loss, metrics = self.arcd_loss(student_logits, teacher_logits, labels)
+        loss, metrics = self.arcd_loss(student_logits, teacher_logits, labels, input_ids=inputs["input_ids"])
 
         if model.training:
             # En entraînement : logging brut immédiat, pour le suivi live.

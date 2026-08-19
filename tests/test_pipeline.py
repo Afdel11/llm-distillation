@@ -244,3 +244,72 @@ def test_arcd_trainer_eval_with_distinct_cache_does_not_crash(debug_tokenizer):
         assert len(eval_entries) == 2
         for entry in eval_entries:
             assert "arcd/loss" not in entry  # la clé SANS préfixe eval_ ne doit pas traîner ici
+
+
+def test_arcd_trainer_with_anti_copy_weight_runs_without_error(debug_tokenizer):
+    """Vérifie que le régime ARCD s'entraîne sans erreur avec anti_copy_weight
+    actif, et que la métrique anti_copy_loss est bien loggée (voir
+    scripts/diagnose_generation.py -- diagnostic qui a motivé ce terme)."""
+    torch.manual_seed(0)
+    dataset = _dataset(debug_tokenizer)
+    collate_fn = drop_keys_collate(make_collate_fn(pad_token_id=debug_tokenizer.pad_token_id), keys=("idx",))
+
+    ensemble = DebugTeacherEnsemble(vocab_size=VOCAB_SIZE, num_teachers=2)
+    student = _new_student()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trainer = ARCDTrainer(model=student, args=_training_args(tmpdir),
+                               train_dataset=dataset, data_collator=collate_fn,
+                               teacher_ensemble=ensemble, temperature=2.0, anti_copy_weight=1.0)
+        trainer.train()
+
+
+def test_anti_copy_penalty_detects_forced_copy_bias():
+    """Construit un cas où le Student met un logit énorme sur 'répéter le
+    dernier token' alors que ce n'est pas la bonne réponse -- vérifie que
+    anti_copy_loss le détecte (proche de 1) et que le gradient pousse à le
+    corriger. Régression directe du diagnostic ayant motivé ce terme."""
+    from arcd.losses import ARCDLoss
+
+    torch.manual_seed(0)
+    batch, seq_len, num_teachers, vocab_size = 2, 6, 2, 100
+
+    input_ids = torch.randint(5, vocab_size, (batch, seq_len))
+    labels = torch.randint(5, vocab_size, (batch, seq_len))
+    labels = torch.where(labels == input_ids, labels + 1, labels) % vocab_size
+
+    base_logits = torch.randn(batch, seq_len, vocab_size)
+    with torch.no_grad():
+        for b in range(batch):
+            for t in range(seq_len):
+                base_logits[b, t, input_ids[b, t]] = 20.0  # force le réflexe de copie
+
+    student_logits = base_logits.clone().requires_grad_(True)
+    teacher_logits = torch.randn(batch, seq_len, num_teachers, vocab_size)
+
+    criterion = ARCDLoss(temperature=2.0, anti_copy_weight=5.0)
+    loss, metrics = criterion(student_logits, teacher_logits, labels, input_ids=input_ids)
+
+    assert metrics["anti_copy_loss"] > 0.9, "p_copy doit être détecté proche de 1 dans ce cas construit"
+
+    loss.backward()
+    grad_on_copy_logit = student_logits.grad[0, 0, input_ids[0, 0]].item()
+    assert grad_on_copy_logit > 0, "le gradient doit pousser à réduire la probabilité de copie"
+
+
+def test_anti_copy_penalty_stays_low_without_copy_bias():
+    """Vérifie que la pénalité ne punit pas artificiellement un modèle qui
+    n'a pas de réflexe de copie particulier (logits aléatoires normaux)."""
+    from arcd.losses import ARCDLoss
+
+    torch.manual_seed(1)
+    batch, seq_len, num_teachers, vocab_size = 2, 6, 2, 100
+    input_ids = torch.randint(5, vocab_size, (batch, seq_len))
+    labels = torch.randint(5, vocab_size, (batch, seq_len))
+    student_logits = torch.randn(batch, seq_len, vocab_size, requires_grad=True)
+    teacher_logits = torch.randn(batch, seq_len, num_teachers, vocab_size)
+
+    criterion = ARCDLoss(temperature=2.0, anti_copy_weight=5.0)
+    _, metrics = criterion(student_logits, teacher_logits, labels, input_ids=input_ids)
+
+    assert metrics["anti_copy_loss"] < 0.1

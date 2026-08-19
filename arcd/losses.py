@@ -50,7 +50,8 @@ class ARCDLoss(nn.Module):
         loss.backward()
     """
 
-    def __init__(self, temperature: float = 2.0, eps: float = EPS, top_k: int = None, max_lambda: float = None):
+    def __init__(self, temperature: float = 2.0, eps: float = EPS, top_k: int = None, max_lambda: float = None,
+                 anti_copy_weight: float = None):
         super().__init__()
         self.temperature = temperature
         self.eps = eps
@@ -59,14 +60,22 @@ class ARCDLoss(nn.Module):
         self.max_lambda = max_lambda  # plafonne lambda(x) -- utilisé pour un fine-tuning de
                                        # "récupération" en CE quasi pure, repartant des poids
                                        # déjà appris sous distillation, sans repartir from scratch
+        self.anti_copy_weight = anti_copy_weight  # pénalise le réflexe de copie du token précédent
+                                                   # quand ce n'est PAS la bonne réponse -- voir
+                                                   # scripts/diagnose_generation.py, diagnostic qui
+                                                   # a révélé ce comportement précis
 
-    def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
+    def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor,
+                input_ids: torch.Tensor = None):
         """
         Args:
             student_logits: (batch, seq_len, vocab_size)              — logits bruts du Student
             teacher_logits: (batch, seq_len, num_teachers, vocab_size) — logits bruts des Teachers
             labels:         (batch, seq_len) — indices de tokens, IGNORE_INDEX (-100) pour
                              les positions à exclure (prompt, padding).
+            input_ids:      (batch, seq_len) — nécessaire uniquement si anti_copy_weight est actif ;
+                             à la position i, c'est le dernier token de contexte quand le Student
+                             prédit la position i+1 (donc "le token qu'il vient de voir").
 
         Returns:
             loss:    scalaire
@@ -110,6 +119,24 @@ class ARCDLoss(nn.Module):
         per_token_loss = per_token_loss * mask  # annule les positions ignorées
         loss = per_token_loss.sum() / n_valid
 
+        anti_copy_loss_value = 0.0
+        if self.anti_copy_weight is not None and self.anti_copy_weight > 0 and input_ids is not None:
+            # p_copy(i) = probabilité que le Student assigne, en position i, à répéter
+            # le dernier token de contexte (input_ids[i]) comme prédiction suivante.
+            student_probs = torch.softmax(student_logits, dim=-1)  # (batch, seq_len, vocab)
+            p_copy = torch.gather(student_probs, dim=-1, index=input_ids.unsqueeze(-1)).squeeze(-1)  # (batch, seq_len)
+
+            # Ne pénalise QUE quand copier serait FAUX (le vrai label n'est pas une
+            # répétition du dernier token) ET sur les positions supervisées -- une
+            # vraie répétition dans le langage naturel (ex: "très très") ne doit
+            # jamais être punie.
+            wrong_copy_mask = mask & (input_ids != safe_labels)
+            n_wrong_copy = wrong_copy_mask.sum().clamp(min=1)
+            anti_copy_loss = (p_copy * wrong_copy_mask.float()).sum() / n_wrong_copy
+
+            loss = loss + self.anti_copy_weight * anti_copy_loss
+            anti_copy_loss_value = anti_copy_loss.item()
+
         metrics = {
             "loss": loss.item(),
             "L_KD": (l_kd * mask).sum().item() / n_valid.item(),
@@ -118,6 +145,7 @@ class ARCDLoss(nn.Module):
             "T": (T * mask).sum().item() / n_valid.item(),
             "S": (S * mask).sum().item() / n_valid.item(),
             "lambda": (lam * mask).sum().item() / n_valid.item(),
+            "anti_copy_loss": anti_copy_loss_value,
         }
         return loss, metrics
 
