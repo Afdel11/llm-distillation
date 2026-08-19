@@ -1,7 +1,18 @@
+# ARCD avec consensus_top_k : corrige la dilution du signal de désaccord
+# identifiée empiriquement (chapitre 5 du mémoire + scripts/diagnose_consensus.py).
+# Réutilise le MÊME cache Teacher que arcd.yaml standard (mêmes 2 Teachers,
+# mêmes logits) -- seul le calcul de C change (top_k au lieu de vocabulaire
+# complet), pas les Teachers eux-mêmes ni P* (cible de L_KD, inchangée).
+#
+# top_k=10 choisi comme point de départ : d'après le diagnostic, un bon
+# compromis entre sensibilité au désaccord (C moyen ~0.98, vs ~1.0 dilué)
+# et stabilité (pas basé sur un seul token, contrairement à top_k=1 qui
+# est le plus sensible mais aussi le plus bruité).
+
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
-  examples_path: "outputs/data_10k/train.json"
-  val_examples_path: "outputs/data_10k/val.json"
+  examples_path: "outputs/data/train.json"
+  val_examples_path: "outputs/data/val.json"
   max_length: 256
   batch_size: 2
   gradient_accumulation_steps: 2
@@ -10,7 +21,7 @@ models:
   teacher_names:
     large: "Qwen/Qwen2.5-1.5B-Instruct"
     small: "Qwen/Qwen2.5-0.5B-Instruct"
-  student:
+  student:                    # IDENTIQUE à arcd.yaml (comparaison équitable)
     hidden_size: 512
     num_hidden_layers: 4
     num_attention_heads: 8
@@ -24,12 +35,10 @@ training:
   early_stopping_patience: 3
   lr: 0.0005
   temperature: 2.0
-  consensus_top_k: 10
+  consensus_top_k: 10          # <- seul changement vs arcd.yaml
   seed: 0
 
 output:
   checkpoint_dir: outputs/checkpoints
-  # Mêmes Teachers, même dataset qu'arcd_topk_10k -> cache PARTAGÉ (pas besoin
-  # de le reconstruire si arcd_topk_10k l'a déjà bâti).
-  teacher_cache_path: outputs/teacher_cache_10k.pt
-  teacher_cache_val_path: outputs/teacher_cache_val_10k.pt
+  teacher_cache_path: outputs/teacher_cache.pt         # PARTAGÉ avec arcd.yaml (mêmes Teachers)
+  teacher_cache_val_path: outputs/teacher_cache_val.pt # PARTAGÉ avec arcd.yaml

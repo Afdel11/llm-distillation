@@ -122,10 +122,10 @@ class ARCDTrainer(Trainer):
     """Méthode proposée : lambda(x) = C * T * (1 - S), calculé par token."""
 
     def __init__(self, *args, teacher_ensemble=None, temperature: float = 2.0,
-                 eval_data_collator=None, top_k: int = None, **kwargs):
+                 eval_data_collator=None, top_k: int = None, max_lambda: float = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.teacher_ensemble = teacher_ensemble  # None si on utilise uniquement le cache
-        self.arcd_loss = ARCDLoss(temperature=temperature, top_k=top_k)
+        self.arcd_loss = ARCDLoss(temperature=temperature, top_k=top_k, max_lambda=max_lambda)
         # transformers.Trainer ne supporte qu'un seul data_collator (train ET eval).
         # Ici, train utilise le cache d'entraînement et eval le cache de validation
         # (deux fichiers distincts, indices non interchangeables) -> on a besoin

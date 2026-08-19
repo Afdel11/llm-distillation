@@ -111,7 +111,6 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
         "arcd_diverse": "eval_arcd/L_CE",   # même ARCDTrainer, même préfixe de log -> même clé
         "arcd_topk": "eval_arcd/L_CE",
         "arcd_topk_diverse": "eval_arcd/L_CE",
-        "arcd_topk_10k": "eval_arcd/L_CE",
     }.get(regime, "eval_loss")
 
     return TrainingArguments(
@@ -157,7 +156,7 @@ def build_training_arguments(cfg: dict, regime: str, has_eval: bool) -> Training
     )
 
 
-def main(config_path: str, force_restart: bool = False, seed_override: int = None):
+def main(config_path: str, force_restart: bool = False, seed_override: int = None, init_from: str = None):
     cfg = load_config(config_path)
     if seed_override is not None:
         cfg["training"]["seed"] = seed_override
@@ -193,16 +192,33 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
               "AUCUNE évaluation, AUCUN garde-fou contre le surapprentissage. "
               "Le nombre d'epochs devra être choisi à l'aveugle.")
 
-    # --- Student MiniQwen (from scratch, dimensionné sur la SORTIE réelle des Teachers) ---
+    # --- Student MiniQwen ---
+    # Par défaut : from scratch, dimensionné sur la SORTIE réelle des Teachers.
+    # Si --init_from est fourni (entraînement par curriculum) : on charge les
+    # POIDS d'un checkpoint précédent, mais PAS l'état complet du Trainer
+    # (optimiseur, scheduler, compteur d'epoch) -- volontaire. Reprendre l'état
+    # complet d'un stage à l'autre est fragile quand la taille du dataset
+    # change entre étapes (le scheduler de learning rate a été calculé pour un
+    # nombre total de steps qui n'est plus valide). Un scheduler frais à
+    # chaque étape est le choix standard pour ce type d'entraînement progressif.
     student_cfg = cfg["models"]["student"]
-    student = build_student(
-        vocab_size=model_vocab_size,
-        hidden_size=student_cfg["hidden_size"],
-        num_hidden_layers=student_cfg["num_hidden_layers"],
-        num_attention_heads=student_cfg["num_attention_heads"],
-        num_key_value_heads=student_cfg["num_key_value_heads"],
-        intermediate_size=student_cfg["intermediate_size"],
-    )
+    if init_from:
+        print(f"Poids initiaux chargés depuis : {init_from} (curriculum -- pas from scratch)")
+        from transformers import AutoModelForCausalLM
+        student = AutoModelForCausalLM.from_pretrained(init_from, dtype=torch.float32)
+        assert student.config.vocab_size == model_vocab_size, (
+            f"vocab_size incompatible entre {init_from} ({student.config.vocab_size}) "
+            f"et les Teachers actuels ({model_vocab_size}) -- curriculum invalide."
+        )
+    else:
+        student = build_student(
+            vocab_size=model_vocab_size,
+            hidden_size=student_cfg["hidden_size"],
+            num_hidden_layers=student_cfg["num_hidden_layers"],
+            num_attention_heads=student_cfg["num_attention_heads"],
+            num_key_value_heads=student_cfg["num_key_value_heads"],
+            intermediate_size=student_cfg["intermediate_size"],
+        )
 
     regime = cfg["training"]["regime"]  # "student_alone" | "hinton_kd" | "multi_teacher_fixed" | "arcd" | "arcd_diverse"
     print(f"\nRégime: {regime}")
@@ -283,7 +299,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 
-    elif regime in ("arcd", "arcd_diverse", "arcd_topk", "arcd_topk_diverse", "arcd_topk_10k"):
+    elif regime in ("arcd", "arcd_diverse", "arcd_topk", "arcd_topk_diverse"):
         # "arcd_diverse" est un ALIAS d'"arcd" : même ARCDTrainer, mêmes clés
         # de log ("arcd/...", "eval_arcd/..."), SEULE la config des Teachers
         # diffère (voir configs/arcd_diverse.yaml). Chemins de checkpoint et
@@ -328,6 +344,7 @@ def main(config_path: str, force_restart: bool = False, seed_override: int = Non
             eval_data_collator=(eval_collate_fn if eval_collate_fn is not collate_fn else None),
             callbacks=callbacks, teacher_ensemble=teacher_ensemble, temperature=cfg["training"]["temperature"],
             top_k=cfg["training"].get("consensus_top_k"),
+            max_lambda=cfg["training"].get("max_lambda"),
         )
         trainer.train(resume_from_checkpoint=resume_ckpt)
 
@@ -347,5 +364,9 @@ if __name__ == "__main__":
     parser.add_argument("--restart", action="store_true",
                          help="Ignore tout checkpoint existant et repart de zéro "
                               "(par défaut, un checkpoint interrompu est repris automatiquement).")
+    parser.add_argument("--init_from", type=str, default=None,
+                         help="Charge les POIDS d'un checkpoint précédent avant l'entraînement "
+                              "(curriculum progressif) -- optimiseur/scheduler frais, pas une reprise "
+                              "complète du Trainer.")
     args = parser.parse_args()
-    main(args.config, force_restart=args.restart, seed_override=args.seed)
+    main(args.config, force_restart=args.restart, seed_override=args.seed, init_from=args.init_from)

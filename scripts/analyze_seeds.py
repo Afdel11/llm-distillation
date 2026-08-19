@@ -37,7 +37,6 @@ REGIME_METRIC = {
     "arcd_diverse": "eval_arcd/L_CE",   # même trainer/préfixe de log qu'"arcd"
     "arcd_topk": "eval_arcd/L_CE",
     "arcd_topk_diverse": "eval_arcd/L_CE",
-    "arcd_topk_10k": "eval_arcd/L_CE",
 }
 
 # Préfixe utilisé pour retrouver C et T à l'epoch retenu -- None si le
@@ -50,7 +49,6 @@ REGIME_CT_PREFIX = {
     "arcd_diverse": "eval_arcd",
     "arcd_topk": "eval_arcd",
     "arcd_topk_diverse": "eval_arcd",
-    "arcd_topk_10k": "eval_arcd",
 }
 
 REGIME_DISPLAY = {
@@ -61,7 +59,6 @@ REGIME_DISPLAY = {
     "arcd_diverse": "ARCD (Teacher diversifié — Coder)",
     "arcd_topk": "ARCD (consensus top_k=10)",
     "arcd_topk_diverse": "ARCD (top_k=10 + Teacher diversifié)",
-    "arcd_topk_10k": "ARCD (top_k=10, dataset 9000 exemples)",
 }
 
 

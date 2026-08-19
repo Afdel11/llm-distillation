@@ -1,16 +1,22 @@
+# Combine les deux interventions : enseignant diversifié (Coder) ET
+# consensus_top_k. C'est LE test décisif : si l'adaptivité de lambda(x)
+# doit un jour montrer un vrai effet, c'est dans cette configuration
+# (désaccord réel entre Teachers + mécanisme de détection non dilué)
+# qu'il devrait apparaître le plus nettement.
+
 data:
   tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
-  examples_path: "outputs/data_10k/train.json"
-  val_examples_path: "outputs/data_10k/val.json"
+  examples_path: "outputs/data/train.json"
+  val_examples_path: "outputs/data/val.json"
   max_length: 256
   batch_size: 2
   gradient_accumulation_steps: 2
 
 models:
   teacher_names:
-    large: "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    large: "Qwen/Qwen2.5-Coder-1.5B-Instruct"   # <- Teacher diversifié
     small: "Qwen/Qwen2.5-0.5B-Instruct"
-  student:
+  student:                    # IDENTIQUE aux autres configs arcd (comparaison équitable)
     hidden_size: 512
     num_hidden_layers: 4
     num_attention_heads: 8
@@ -29,7 +35,5 @@ training:
 
 output:
   checkpoint_dir: outputs/checkpoints
-  # Teacher large différent (Coder) -> cache dédié, dataset 9000 exemples
-  # (SÉPARÉ du cache diversifié 900 exemples utilisé par arcd_diverse).
-  teacher_cache_path: outputs/teacher_cache_diverse_10k.pt
-  teacher_cache_val_path: outputs/teacher_cache_val_diverse_10k.pt
+  teacher_cache_path: outputs/teacher_cache_diverse.pt         # PARTAGÉ avec arcd_diverse.yaml
+  teacher_cache_val_path: outputs/teacher_cache_val_diverse.pt # PARTAGÉ avec arcd_diverse.yaml

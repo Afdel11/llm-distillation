@@ -50,11 +50,15 @@ class ARCDLoss(nn.Module):
         loss.backward()
     """
 
-    def __init__(self, temperature: float = 2.0, eps: float = EPS, top_k: int = None):
+    def __init__(self, temperature: float = 2.0, eps: float = EPS, top_k: int = None, max_lambda: float = None):
         super().__init__()
         self.temperature = temperature
         self.eps = eps
-        self.top_k = top_k
+        self.top_k = top_k  # voir robust_consensus() -- corrige la dilution du signal
+                             # de désaccord sur un vocabulaire de grande dimension
+        self.max_lambda = max_lambda  # plafonne lambda(x) -- utilisé pour un fine-tuning de
+                                       # "récupération" en CE quasi pure, repartant des poids
+                                       # déjà appris sous distillation, sans repartir from scratch
 
     def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
         """
@@ -88,6 +92,8 @@ class ARCDLoss(nn.Module):
         S = student_confidence(student_logits, temperature=self.temperature)
 
         lam = adaptive_lambda(C, T, S)  # (batch, seq_len)
+        if self.max_lambda is not None:
+            lam = torch.clamp(lam, max=self.max_lambda)
 
         l_kd = kd_loss_per_token(student_logits, p_median, temperature=self.temperature)  # (batch, seq_len)
 
