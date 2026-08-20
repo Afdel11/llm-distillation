@@ -73,14 +73,28 @@ class ARCDLoss(nn.Module):
             teacher_logits: (batch, seq_len, num_teachers, vocab_size) — logits bruts des Teachers
             labels:         (batch, seq_len) — indices de tokens, IGNORE_INDEX (-100) pour
                              les positions à exclure (prompt, padding).
-            input_ids:      (batch, seq_len) — nécessaire uniquement si anti_copy_weight est actif ;
-                             à la position i, c'est le dernier token de contexte quand le Student
-                             prédit la position i+1 (donc "le token qu'il vient de voir").
+            input_ids:      (batch, seq_len) — nécessaire uniquement si anti_copy_weight est actif.
 
         Returns:
             loss:    scalaire
             metrics: dict de diagnostics moyennés sur les tokens valides
         """
+        # CORRECTIF CRITIQUE (voir chapitre 5 du mémoire, diagnostic génération) :
+        # data_pipeline/prompts.py:build_example() construit labels[i] == input_ids[i]
+        # (même position, PAS décalé). C'est le comportement ATTENDU par
+        # transformers.Trainer standard (régime student_alone), qui applique lui-même
+        # le décalage causal standard EN INTERNE lors du calcul de sa propre loss
+        # (Qwen2ForCausalLM.forward, comportement HF documenté). Mais ARCDLoss calcule
+        # sa loss À LA MAIN, sans jamais appliquer ce décalage -- ce qui revient à
+        # entraîner le Student à prédire "le token qu'il vient de recevoir en
+        # contexte" plutôt que "le token qui vient après". Décalage appliqué ICI,
+        # une seule fois, avant tout calcul en aval (KD, CE, C/T/S, anti-copie).
+        student_logits = student_logits[:, :-1, :]
+        teacher_logits = teacher_logits[:, :-1, :, :]
+        labels = labels[:, 1:]
+        if input_ids is not None:
+            input_ids = input_ids[:, :-1]
+
         mask = (labels != IGNORE_INDEX)  # (batch, seq_len)
         n_valid = mask.sum().clamp(min=1)
 
@@ -176,6 +190,11 @@ class FixedWeightConsensusLoss(nn.Module):
         self.top_k = top_k
 
     def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor, labels: torch.Tensor):
+        # CORRECTIF CRITIQUE -- voir ARCDLoss.forward() pour l'explication complète.
+        student_logits = student_logits[:, :-1, :]
+        teacher_logits = teacher_logits[:, :-1, :, :]
+        labels = labels[:, 1:]
+
         mask = (labels != IGNORE_INDEX)
         n_valid = mask.sum().clamp(min=1)
 

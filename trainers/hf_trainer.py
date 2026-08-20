@@ -73,6 +73,13 @@ class HintonTrainer(Trainer):
                     input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"]
                 ).logits
 
+        # CORRECTIF CRITIQUE -- voir arcd/losses.py:ARCDLoss.forward() pour
+        # l'explication complète. Sans ce décalage, le Student est entraîné à
+        # prédire "le token qu'il vient de recevoir" plutôt que "le token suivant".
+        student_logits = student_logits[:, :-1, :]
+        teacher_logits = teacher_logits[:, :-1, :]
+        labels = labels[:, 1:]
+
         mask = (labels != IGNORE_INDEX)
         n_valid = mask.sum().clamp(min=1)
 
