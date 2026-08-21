@@ -20,3 +20,5 @@ outputs/teacher_cache*.pt
 
 # Large teacher caches
 outputs/teacher_cache*.pt
+outputs/checkpoints_*/
+outputs/data_curriculum/
