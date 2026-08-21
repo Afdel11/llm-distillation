@@ -1,0 +1,35 @@
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: "outputs/data_curriculum/stage2.json"
+  val_examples_path: "outputs/data/val.json"
+  max_length: 256
+  batch_size: 2
+  gradient_accumulation_steps: 2
+
+models:
+  teacher_names:
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
+  student:
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4
+    intermediate_size: 2048
+
+training:
+  regime: arcd_topk
+  device: cuda
+  epochs: 5
+  early_stopping_patience: 2
+  lr: 0.0005
+  temperature: 2.0
+  consensus_top_k: 10
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints_curriculum/stage2
+  # Chemins volontairement inexistants -> force le mode Teacher en direct,
+  # sans cache (voir l'en-tête de ce script pour la raison).
+  teacher_cache_path: outputs/__no_cache_curriculum__.pt
+  teacher_cache_val_path: outputs/__no_cache_curriculum_val__.pt

@@ -1,0 +1,30 @@
+data:
+  batch_size: 2
+  examples_path: outputs/data/train.json
+  gradient_accumulation_steps: 2
+  max_length: 256
+  tokenizer_name: Qwen/Qwen2.5-0.5B-Instruct
+  val_examples_path: outputs/data/val.json
+models:
+  student:
+    hidden_size: 512
+    intermediate_size: 2048
+    num_attention_heads: 8
+    num_hidden_layers: 4
+    num_key_value_heads: 4
+  teacher_names:
+    large: Qwen/Qwen2.5-1.5B-Instruct
+    small: Qwen/Qwen2.5-0.5B-Instruct
+output:
+  checkpoint_dir: outputs/checkpoints_patient
+  teacher_cache_path: outputs/teacher_cache.pt
+  teacher_cache_val_path: outputs/teacher_cache_val.pt
+training:
+  device: cuda
+  early_stopping_patience: 8
+  epochs: 30
+  hinton_alpha: 0.5
+  lr: 0.0005
+  regime: hinton_kd
+  seed: 0
+  temperature: 2.0
