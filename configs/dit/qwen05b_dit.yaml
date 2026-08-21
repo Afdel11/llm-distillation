@@ -1,0 +1,33 @@
+data:
+  tokenizer_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  examples_path: "outputs/data_dit/dit_train.json"
+  val_examples_path: "outputs/data_dit/dit_val.json"
+  max_length: 256
+  batch_size: 2
+  gradient_accumulation_steps: 2
+
+models:
+  teacher_names:
+    large: "Qwen/Qwen2.5-1.5B-Instruct"
+    small: "Qwen/Qwen2.5-0.5B-Instruct"
+  student:
+    # ignoré quand --init_from est utilisé -- laissé pour cohérence du fichier
+    hidden_size: 512
+    num_hidden_layers: 4
+    num_attention_heads: 8
+    num_key_value_heads: 4
+    intermediate_size: 2048
+
+training:
+  regime: student_alone
+  device: cuda
+  epochs: 15
+  early_stopping_patience: 4
+  lr: 0.00005          # taux réduit -- on affine un modèle DÉJÀ compétent, pas from scratch
+  temperature: 2.0
+  seed: 0
+
+output:
+  checkpoint_dir: outputs/checkpoints_dit_qwen05b
+  teacher_cache_path: outputs/teacher_cache.pt
+  teacher_cache_val_path: outputs/teacher_cache_val.pt
