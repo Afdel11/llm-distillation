@@ -24,6 +24,10 @@ random.seed(0)
 DATA = []
 
 
+_group_counter = [0]  # identifie chaque APPEL à add() comme UN SEUL fait,
+                       # peu importe le nombre de questions/réponses qu'il contient
+
+
 def add(questions, response):
     """
     Associe plusieurs formulations de question à un ou plusieurs
@@ -33,10 +37,16 @@ def add(questions, response):
     modèle voie le MÊME fait exprimé de plusieurs façons différentes, côté
     question ET côté réponse, plutôt que de mémoriser une seule chaîne
     exacte de bout en bout.
+
+    IMPORTANT : toutes les paraphrases générées par CET appel partagent le
+    même "_group" -- utilisé plus bas pour garantir que train et val ne se
+    partagent JAMAIS les paraphrases d'un même fait (fuite sinon).
     """
     responses = response if isinstance(response, list) else [response]
+    group_id = _group_counter[0]
+    _group_counter[0] += 1
     for i, q in enumerate(questions):
-        DATA.append({"prompt": q, "response": responses[i % len(responses)]})
+        DATA.append({"prompt": q, "response": responses[i % len(responses)], "_group": group_id})
 
 
 # --- Histoire et identité -------------------------------------------
@@ -784,6 +794,57 @@ add(
 )
 
 
+# --- Politesse conversationnelle pure (sans fait DIT) -----------------
+# Pour que le modèle sache ouvrir/fermer une conversation comme un vrai
+# assistant, pas seulement réciter des faits.
+add(
+    ["Bonjour", "Salut", "Bonsoir", "Coucou", "Bonjour !"],
+    [
+        "Bonjour ! Je suis l'assistant virtuel du Dakar Institute of Technology. Comment puis-je vous "
+        "aider aujourd'hui ?",
+        "Bonjour et bienvenue ! Je suis là pour répondre à vos questions sur le DIT. Que souhaitez-vous "
+        "savoir ?",
+    ]
+)
+
+add(
+    ["Merci", "Merci beaucoup", "Merci pour ces informations", "Merci beaucoup pour votre aide"],
+    [
+        "Avec plaisir ! N'hésitez pas si vous avez d'autres questions sur le DIT.",
+        "Je vous en prie ! Je reste à votre disposition pour toute autre question concernant le Dakar "
+        "Institute of Technology.",
+    ]
+)
+
+add(
+    ["Au revoir", "À bientôt", "Bonne journée", "Merci, au revoir"],
+    [
+        "Au revoir, et bonne continuation ! N'hésitez pas à revenir si vous avez d'autres questions sur "
+        "le DIT.",
+        "À bientôt ! N'hésitez pas à me solliciter à nouveau si vous avez besoin d'informations sur le "
+        "Dakar Institute of Technology.",
+    ]
+)
+
+add(
+    ["Comment ça va ?", "Comment vas-tu ?", "Tu vas bien ?"],
+    "Je vais très bien, merci de demander ! Je suis prêt à répondre à toutes vos questions sur le Dakar "
+    "Institute of Technology."
+)
+
+add(
+    ["Qui es-tu ?", "Qu'est-ce que tu fais ?", "Tu es qui ?", "Présente-toi."],
+    "Je suis l'assistant virtuel du Dakar Institute of Technology (DIT), conçu pour répondre à vos "
+    "questions sur l'école, ses formations, ses conditions d'admission et ses services."
+)
+
+add(
+    ["D'accord, merci pour ta réponse", "Ok merci", "Parfait, merci"],
+    "Je vous en prie, ravi d'avoir pu vous aider ! N'hésitez pas si une autre question sur le DIT vous "
+    "vient à l'esprit."
+)
+
+
 # =====================================================================
 # Augmentation par préfixes conversationnels
 # =====================================================================
@@ -823,53 +884,126 @@ def apply_prefix(prefix, lowercase_first, text):
 
 
 _original_data = list(DATA)
-DATA = []
-for _item in _original_data:
-    for _prefix, _lower in CONVERSATIONAL_PREFIXES:
-        DATA.append({
-            "prompt": apply_prefix(_prefix, _lower, _item["prompt"]),
-            "response": _item["response"],
-        })
+
+# CORRECTIF CRITIQUE #1 (préfixes) -- découper APRÈS l'expansion par
+# préfixes laissait deux variantes du MÊME fait ("Dis-moi : X ?" et
+# "Question : X ?", même réponse) se retrouver l'une en train et l'autre
+# en val. Le découpage se fait maintenant AVANT toute expansion.
+#
+# CORRECTIF CRITIQUE #2 (paraphrases d'origine) -- découvert en vérifiant
+# le correctif #1 : même avant l'expansion par préfixes, un même fait
+# pouvait déjà être écrit à la main sous PLUSIEURS formulations dans un
+# seul appel à add() (ex: "Qu'est-ce que le DIT ?" / "Peux-tu me
+# présenter le DIT ?" / ...) -- et ces formulations étaient jusqu'ici
+# traitées comme des éléments INDÉPENDANTS, pouvant eux aussi se
+# retrouver de part et d'autre du découpage train/val. Le découpage se
+# fait maintenant par GROUPE (un appel à add() = un fait = un groupe,
+# voir "_group" dans add()) : TOUTES les formulations d'un même fait,
+# qu'elles viennent des paraphrases écrites à la main ou de l'expansion
+# par préfixes, restent group��es du même côté.
+_group_ids = sorted(set(item["_group"] for item in _original_data))
+random.shuffle(_group_ids)
+n_val_groups = max(3, len(_group_ids) // 10)
+_val_group_ids = set(_group_ids[:n_val_groups])
+_train_group_ids = set(_group_ids[n_val_groups:])
+
+_val_base = [item for item in _original_data if item["_group"] in _val_group_ids]
+_train_base = [item for item in _original_data if item["_group"] in _train_group_ids]
+
+print(f"Découpage par FAIT COMPLET (pas par formulation individuelle) : "
+      f"{len(_train_group_ids)} faits en train ({len(_train_base)} formulations), "
+      f"{len(_val_group_ids)} faits en val ({len(_val_base)} formulations) -- "
+      f"aucune fuite possible entre les deux.")
+
+
+def expand_with_prefixes(base_items):
+    expanded = []
+    for _item in base_items:
+        for _prefix, _lower in CONVERSATIONAL_PREFIXES:
+            expanded.append({
+                "prompt": apply_prefix(_prefix, _lower, _item["prompt"]),
+                "response": _item["response"],
+            })
+    return expanded
+
+
+train = expand_with_prefixes(_train_base)
+val = expand_with_prefixes(_val_base)
+DATA = train + val
 
 print(f"Augmentation par préfixes : {len(_original_data)} faits de base -> {len(DATA)} exemples "
-      f"({len(CONVERSATIONAL_PREFIXES)} formulations par fait)")
+      f"({len(CONVERSATIONAL_PREFIXES)} formulations par fait) -- "
+      f"{len(train)} en train, {len(val)} en val, SANS chevauchement de faits.")
 
 
+# =====================================================================
+# Enrobage poli d'une partie des réponses factuelles
+# =====================================================================
+# Un tiers des exemples (choisis au hasard, séparément en train et en
+# val) reçoivent une réponse identique sur le fond mais enrobée d'une
+# formule d'accueil et/ou de clôture -- pour que le modèle apprenne à
+# se comporter comme un vrai assistant conversationnel poli, pas
+# seulement un dictionnaire question/réponse brut. Les réponses PURES
+# (sans enrobage) restent majoritaires, pour que le modèle garde aussi
+# la capacité de répondre de façon directe et concise si besoin.
+POLITE_OPENERS = ["", "", "Bonjour ! ", "Avec plaisir : ", "Bien sûr ! ", "Excellente question ! "]
+POLITE_CLOSERS = [
+    "", "", "",
+    " N'hésitez pas si vous avez d'autres questions.",
+    " J'espère que cela répond à votre question !",
+    " Je reste disponible pour toute autre question sur le DIT.",
+]
 
 
+def add_politeness(items, fraction=1 / 3):
+    n_wrap = int(len(items) * fraction)
+    indices = list(range(len(items)))
+    random.shuffle(indices)
+    wrap_indices = set(indices[:n_wrap])
+    for i in wrap_indices:
+        opener = random.choice(POLITE_OPENERS)
+        closer = random.choice(POLITE_CLOSERS)
+        original = items[i]["response"]
+        # Ne pas ré-enrober les salutations pures (déjà conversationnelles)
+        if original.strip().startswith(("Bonjour", "Avec plaisir", "Je vous en prie", "Au revoir",
+                                          "À bientôt", "Je vais très bien", "Je suis l'assistant")):
+            continue
+        items[i]["response"] = opener + original + closer
 
-# CORRECTIF -- reproduit exactement le format de scripts/prepare_dataset.py
-# (format_alpaca_example), utilisé pour TOUT le corpus général sur lequel
-# les checkpoints existants ont été entraînés : le champ "prompt" doit
-# contenir le gabarit "### Instruction:\n...\n\n### Réponse:\n" DIRECTEMENT
-# (build_example() ne l'ajoute PAS lui-même), et la réponse doit commencer
-# par un espace. Sans ce correctif, un fine-tuning à partir d'un checkpoint
-# général verrait un format différent de celui qu'il a appris -- un vrai
-# décalage de distribution, indépendant du contenu factuel.
-for item in DATA:
-    item["prompt"] = f"### Instruction:\n{item['prompt']}\n\n### Réponse:\n"
-    item["response"] = " " + item["response"]
 
-random.shuffle(DATA)
+add_politeness(train)
+add_politeness(val)
+print(f"Enrobage poli appliqué à environ 1/3 des exemples (train et val, indépendamment).")
+
+#
+# IMPORTANT : appliqué séparément à train et val, et chacun mélangé
+# INDÉPENDAMMENT -- ne JAMAIS combiner puis re-mélanger train+val ensemble
+# ici, ça recréerait exactement la fuite qu'on vient de corriger.
+for _split in (train, val):
+    for item in _split:
+        item["prompt"] = f"### Instruction:\n{item['prompt']}\n\n### Réponse:\n"
+        item["response"] = " " + item["response"]
+    random.shuffle(_split)
 
 import os
 
 os.makedirs("outputs/data_dit", exist_ok=True)
-
-with open("outputs/data_dit/dit_dataset.json", "w", encoding="utf-8") as f:
-    json.dump(DATA, f, ensure_ascii=False, indent=2)
-
-print(f"{len(DATA)} exemples générés -> dit_dataset.json")
-
-# Répartition train/val (90/10, comme le reste du projet)
-n_val = max(5, len(DATA) // 10)
-val = DATA[:n_val]
-train = DATA[n_val:]
 
 with open("outputs/data_dit/dit_train.json", "w", encoding="utf-8") as f:
     json.dump(train, f, ensure_ascii=False, indent=2)
 with open("outputs/data_dit/dit_val.json", "w", encoding="utf-8") as f:
     json.dump(val, f, ensure_ascii=False, indent=2)
 
+with open("outputs/data_dit/dit_dataset.json", "w", encoding="utf-8") as f:
+    json.dump(train + val, f, ensure_ascii=False, indent=2)
+
 print(f"Train: {len(train)} exemples -> dit_train.json")
 print(f"Val:   {len(val)} exemples -> dit_val.json")
+
+# Vérification finale : aucun fait de base ne doit apparaître des deux côtés
+_train_base_prompts = {item["prompt"] for item in _train_base}
+_val_base_prompts = {item["prompt"] for item in _val_base}
+_overlap = _train_base_prompts & _val_base_prompts
+assert not _overlap, f"FUITE DÉTECTÉE : {len(_overlap)} faits de base présents des deux côtés !"
+print("Vérification anti-fuite : OK, aucun fait de base partagé entre train et val.")
+

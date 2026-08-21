@@ -26,11 +26,24 @@ import matplotlib.pyplot as plt
 
 # (label affiché, dossier de checkpoints, sous-régime, clé de métrique)
 CHECKPOINTS = [
-    ("Teacher Qwen0.5B — étape 1 (149 ex.)", "outputs/checkpoints_dit_qwen05b_stage1_149ex", "student_alone", "eval_loss"),
-    ("Teacher Qwen0.5B — étape 2 (1980 ex.)", "outputs/checkpoints_dit_qwen05b", "student_alone", "eval_loss"),
-    ("Student ARCD — étape 1 (149 ex.)", "outputs/checkpoints_dit_smart_stage1_149ex", "arcd_topk", "eval_arcd/L_CE"),
-    ("Student ARCD — étape 2 (1980 ex.)", "outputs/checkpoints_dit_smart", "arcd_topk", "eval_arcd/L_CE"),
+    ("Teacher Qwen0.5B — étape 1 (149 ex., fuite train/val)", "outputs/checkpoints_dit_qwen05b_stage1_149ex", "student_alone", "eval_loss"),
+    ("Teacher Qwen0.5B — étape 2 (2256 ex., fuite corrigée)", "outputs/checkpoints_dit_qwen05b", "student_alone", "eval_loss"),
+    ("Teacher Qwen0.5B — étape 3 (continuité)", "outputs/checkpoints_dit_qwen05b_stage3", "student_alone", "eval_loss"),
+    ("Student ARCD — étape 1 (149 ex., fuite train/val)", "outputs/checkpoints_dit_smart_stage1_149ex", "arcd_topk", "eval_arcd/L_CE"),
+    ("Student ARCD — étape 2 (2256 ex., fuite corrigée)", "outputs/checkpoints_dit_smart", "arcd_topk", "eval_arcd/L_CE"),
+    ("Student ARCD — étape 3 (continuité)", "outputs/checkpoints_dit_smart_stage3", "arcd_topk", "eval_arcd/L_CE"),
 ]
+
+# Référence : meilleur résultat général (hors DIT) de chaque régime, pour
+# rappeler POURQUOI multi_teacher_fixed avait été retenu comme base avant
+# la spécialisation DIT -- voir outputs/analysis/seeds_summary.csv du
+# projet général pour le détail complet.
+GENERAL_REFERENCE = {
+    "Baseline (student_alone), général patient": 5.531,
+    "Hinton KD, général patient": 5.502,
+    "Multi-Teacher fixe, général patient (retenu comme base)": 5.344,
+    "ARCD, général patient": 5.642,
+}
 
 
 def find_trainer_state(checkpoint_dir, regime):
@@ -80,32 +93,38 @@ def main():
 
     if not all_curves:
         print("\nAucune courbe disponible -- vérifie les chemins ci-dessus.")
-        return
+    else:
+        # --- Tracé des courbes disponibles ---
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
 
-    # --- Tracé des courbes disponibles ---
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+        teacher_curves = {k: v for k, v in all_curves.items() if k.startswith("Teacher")}
+        student_curves = {k: v for k, v in all_curves.items() if k.startswith("Student")}
 
-    teacher_curves = {k: v for k, v in all_curves.items() if k.startswith("Teacher")}
-    student_curves = {k: v for k, v in all_curves.items() if k.startswith("Student")}
+        for ax, curves, title in [(axes[0], teacher_curves, "Teacher Qwen0.5B (fine-tuning direct)"),
+                                    (axes[1], student_curves, "Student ARCD (distillation)")]:
+            for label, (epochs, values) in curves.items():
+                short_label = label.split("—")[-1].strip()
+                ax.plot(epochs, values, marker="o", markersize=3, label=short_label)
+            ax.set_title(title)
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("eval_L_CE")
+            ax.legend(fontsize=8)
+            ax.grid(alpha=0.3)
 
-    for ax, curves, title in [(axes[0], teacher_curves, "Teacher Qwen0.5B (fine-tuning direct)"),
-                                (axes[1], student_curves, "Student ARCD (distillation)")]:
-        for label, (epochs, values) in curves.items():
-            short_label = "Étape 1 (149 ex.)" if "étape 1" in label else "Étape 2 (1980 ex.)"
-            ax.plot(epochs, values, marker="o", markersize=3, label=short_label)
-        ax.set_title(title)
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel("eval_L_CE")
-        ax.legend()
-        ax.grid(alpha=0.3)
+        plt.suptitle("DIT — Progression par étapes (149 -> 2256 exemples -> étape 3)")
+        plt.tight_layout()
 
-    plt.suptitle("DIT — Impact de l'augmentation par préfixes conversationnels (149 -> 1980 exemples)")
-    plt.tight_layout()
+        os.makedirs("outputs/analysis", exist_ok=True)
+        out_path = "outputs/analysis/dit_courbes_comparaison.png"
+        plt.savefig(out_path, dpi=150)
+        print(f"\nCourbes sauvegardées -> {out_path}")
 
-    os.makedirs("outputs/analysis", exist_ok=True)
-    out_path = "outputs/analysis/dit_courbes_comparaison.png"
-    plt.savefig(out_path, dpi=150)
-    print(f"\nCourbes sauvegardées -> {out_path}")
+    print("\n" + "=" * 78)
+    print(" RAPPEL — pourquoi Multi-Teacher fixe avait été retenu comme base générale")
+    print("=" * 78)
+    for label, val in GENERAL_REFERENCE.items():
+        marker = "  <-- base choisie pour le fine-tuning DIT" if "retenu" in label else ""
+        print(f"  {label:55s} eval_L_CE = {val:.3f}{marker}")
 
 
 if __name__ == "__main__":
