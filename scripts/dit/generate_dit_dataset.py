@@ -25,9 +25,18 @@ DATA = []
 
 
 def add(questions, response):
-    """Associe plusieurs formulations de question à UNE réponse vérifiée."""
-    for q in questions:
-        DATA.append({"prompt": q, "response": response})
+    """
+    Associe plusieurs formulations de question à un ou plusieurs
+    formulations de réponse (toutes vérifiées, factuellement identiques,
+    juste exprimées différemment). Si plusieurs réponses sont données,
+    elles sont distribuées en tourniquet sur les questions -- pour que le
+    modèle voie le MÊME fait exprimé de plusieurs façons différentes, côté
+    question ET côté réponse, plutôt que de mémoriser une seule chaîne
+    exacte de bout en bout.
+    """
+    responses = response if isinstance(response, list) else [response]
+    for i, q in enumerate(questions):
+        DATA.append({"prompt": q, "response": responses[i % len(responses)]})
 
 
 # --- Histoire et identité -------------------------------------------
@@ -37,10 +46,17 @@ add(
         "Peux-tu me présenter le DIT ?",
         "Qu'est-ce que le DIT ?",
         "En quoi consiste le Dakar Institute of Technology ?",
+        "Peux-tu m'expliquer ce qu'est le DIT en quelques mots ?",
+        "Présente-moi rapidement le Dakar Institute of Technology.",
     ],
-    "Le Dakar Institute of Technology (DIT) est une école supérieure privée basée à Dakar, au Sénégal, "
-    "spécialisée dans l'informatique, le Big Data et l'intelligence artificielle. C'est la première "
-    "école d'Afrique de l'Ouest entièrement dédiée à ces domaines."
+    [
+        "Le Dakar Institute of Technology (DIT) est une école supérieure privée basée à Dakar, au "
+        "Sénégal, spécialisée dans l'informatique, le Big Data et l'intelligence artificielle. C'est la "
+        "première école d'Afrique de l'Ouest entièrement dédiée à ces domaines.",
+        "Basé à Dakar, le DIT est un établissement privé d'enseignement supérieur qui se concentre sur "
+        "l'informatique, le Big Data et l'intelligence artificielle. Il s'agit de la toute première "
+        "école d'Afrique de l'Ouest entièrement consacrée à ces domaines.",
+    ]
 )
 
 add(
@@ -240,10 +256,21 @@ add(
     [
         "Comment se déroule le processus d'admission en Licence au DIT ?",
         "Faut-il se déplacer physiquement pour s'inscrire au DIT ?",
+        "Comment le processus de recrutement des étudiants se déroule en Licence au DIT ?",
+        "Quelles sont les étapes pour être admis en Licence au DIT ?",
+        "Comment fonctionne la procédure d'inscription en Licence au DIT ?",
+        "Est-ce que je peux m'inscrire en Licence au DIT sans me rendre sur place ?",
+        "Décris-moi les étapes du recrutement en Licence au DIT.",
+        "Quel est le parcours d'un candidat qui souhaite intégrer la Licence du DIT ?",
     ],
-    "L'admission en Licence au DIT peut se faire entièrement en ligne, sans déplacement physique : elle "
-    "comprend le dépôt du dossier de candidature, un entretien avec le Directeur des études, puis le "
-    "paiement des frais d'inscription."
+    [
+        "L'admission en Licence au DIT peut se faire entièrement en ligne, sans déplacement physique : "
+        "elle comprend le dépôt du dossier de candidature, un entretien avec le Directeur des études, "
+        "puis le paiement des frais d'inscription.",
+        "Pour intégrer la Licence du DIT, le candidat dépose d'abord son dossier, passe ensuite un "
+        "entretien avec le Directeur des études, et finalise son admission en réglant les frais "
+        "d'inscription — toute la procédure peut se faire à distance, sans avoir à se déplacer.",
+    ]
 )
 
 add(
@@ -340,9 +367,16 @@ add(
     [
         "Combien coûte le Master Intelligence Artificielle au DIT ?",
         "Quels sont les frais du Master IA ?",
+        "Quel est le tarif du Master Intelligence Artificielle du DIT ?",
+        "Combien dois-je payer pour suivre le Master IA au DIT ?",
+        "Quel budget prévoir pour le Master Intelligence Artificielle du DIT ?",
     ],
-    "Les frais d'inscription au Master Intelligence Artificielle du DIT s'élèvent à 300 000 FCFA, avec "
-    "une mensualité de 150 000 FCFA sur 10 mois."
+    [
+        "Les frais d'inscription au Master Intelligence Artificielle du DIT s'élèvent à 300 000 FCFA, "
+        "avec une mensualité de 150 000 FCFA sur 10 mois.",
+        "Le Master Intelligence Artificielle du DIT coûte 300 000 FCFA d'inscription, puis 150 000 FCFA "
+        "par mois pendant 10 mois.",
+    ]
 )
 
 add(
@@ -680,11 +714,22 @@ add(
         "Comment puis-je payer mes frais de scolarité au DIT ?",
         "Quels sont les moyens de paiement acceptés par le DIT ?",
         "Comment régler ma scolarité au Dakar Institute of Technology ?",
+        "Par quels canaux puis-je verser mes frais d'inscription au DIT ?",
+        "Quelles sont les options disponibles pour régler mes frais au DIT ?",
+        "De quelle manière un étudiant peut-il payer ses frais au DIT ?",
+        "Est-il possible de payer le DIT par mobile money ou par carte ?",
+        "Quels moyens de règlement le DIT met-il à disposition des étudiants ?",
     ],
-    "Le DIT accepte plusieurs modes de paiement : virement bancaire (CBAO ou UBA), Orange Money, Wave, "
-    "PayPal, et paiement par carte bancaire (Visa ou Mastercard) via un lien sécurisé. Après tout "
-    "paiement, il faut envoyer un message sur WhatsApp au +221 77 598 51 51 ou un e-mail à "
-    "compta@dit.sn pour obtenir un reçu."
+    [
+        "Le DIT accepte plusieurs modes de paiement : virement bancaire (CBAO ou UBA), Orange Money, "
+        "Wave, PayPal, et paiement par carte bancaire (Visa ou Mastercard) via un lien sécurisé. Après "
+        "tout paiement, il faut envoyer un message sur WhatsApp au +221 77 598 51 51 ou un e-mail à "
+        "compta@dit.sn pour obtenir un reçu.",
+        "Pour régler ses frais, un étudiant du DIT dispose de plusieurs options : virement vers un "
+        "compte CBAO ou UBA, Orange Money, l'application Wave, PayPal, ou une carte bancaire Visa/"
+        "Mastercard via un lien de paiement. Un reçu est ensuite délivré sur demande, après envoi "
+        "d'une preuve de paiement par WhatsApp ou e-mail au service comptabilité.",
+    ]
 )
 
 add(
@@ -737,6 +782,59 @@ add(
     "Oui, le DIT accepte les paiements par carte bancaire (Visa et Mastercard) via un lien de paiement "
     "sécurisé fourni par l'école."
 )
+
+
+# =====================================================================
+# Augmentation par préfixes conversationnels
+# =====================================================================
+# Multiplie le volume SANS toucher au contenu factuel ni risquer de bris
+# grammatical : chaque question déjà vérifiée à la main est reprise TELLE
+# QUELLE, avec plusieurs façons naturelles et neutres de l'introduire.
+# Un vrai utilisateur pourrait taper n'importe laquelle de ces variantes
+# pour poser exactement la même question -- c'est le principe même de la
+# robustesse sémantique qu'on cherche à enseigner au modèle : plusieurs
+# formes de surface, un seul sens, une seule réponse correcte.
+#
+# (préfixe, minusculer_la_suite) -- minusculer_la_suite=True quand le
+# préfixe continue la même phrase (virgule) plutôt que d'introduire une
+# question autonome (deux-points).
+CONVERSATIONAL_PREFIXES = [
+    ("", False),
+    ("Dis-moi : ", False),
+    ("J'ai une question : ", False),
+    ("Question : ", False),
+    ("Je me demande : ", False),
+    ("Petite question : ", False),
+    ("Dis, ", True),
+    ("Au fait, ", True),
+    ("Pourrais-tu répondre à ceci : ", False),
+    ("Voici ma question : ", False),
+    ("Bonjour, ", True),
+    ("Bonjour, j'aimerais savoir : ", False),
+]
+
+
+def apply_prefix(prefix, lowercase_first, text):
+    if prefix == "":
+        return text
+    if lowercase_first and text:
+        text = text[0].lower() + text[1:]
+    return prefix + text
+
+
+_original_data = list(DATA)
+DATA = []
+for _item in _original_data:
+    for _prefix, _lower in CONVERSATIONAL_PREFIXES:
+        DATA.append({
+            "prompt": apply_prefix(_prefix, _lower, _item["prompt"]),
+            "response": _item["response"],
+        })
+
+print(f"Augmentation par préfixes : {len(_original_data)} faits de base -> {len(DATA)} exemples "
+      f"({len(CONVERSATIONAL_PREFIXES)} formulations par fait)")
+
+
 
 
 
