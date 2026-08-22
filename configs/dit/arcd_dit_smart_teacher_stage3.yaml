@@ -23,8 +23,8 @@ training:
   regime: arcd_topk
   device: cuda
   epochs: 15
-  early_stopping_patience: 4
-  lr: 0.00005          # réduit -- étape 3, affiner sans écraser
+  early_stopping_patience: 6
+  lr: 0.00001          # étape 3bis -- nettement plus doux, le run précédent a dérivé dès epoch 1
   temperature: 2.0
   consensus_top_k: 10
   seed: 0

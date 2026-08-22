@@ -21,8 +21,8 @@ training:
   regime: student_alone
   device: cuda
   epochs: 15
-  early_stopping_patience: 4
-  lr: 0.00003          # encore réduit -- étape 3, affiner sans écraser ce qui est déjà appris
+  early_stopping_patience: 6
+  lr: 0.000008         # étape 3bis -- nettement plus doux, le run précédent a dérivé dès epoch 1
   temperature: 2.0
   seed: 0
 
